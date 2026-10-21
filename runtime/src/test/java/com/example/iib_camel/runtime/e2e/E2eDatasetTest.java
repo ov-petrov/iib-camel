@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * E2E-тест уровня L3 (docs/test-strategy.ru.md): сгенерированный маршрут
- * конвертера (camel/Adapter.route.xml) выполняется на встроенном Artemis,
+ * конвертера (camel/Adapter-route.xml) выполняется на встроенном Artemis,
  * сценарии берутся из декларативного датасета e2e (dataset.yml).
  *
  * Каждая запись датасета: вход (очередь, сообщение, MQMD-приоритет) →

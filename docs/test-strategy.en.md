@@ -32,7 +32,7 @@ converter/src/test/resources/corpus/
 │   ├── Adapter.msgflow              # source flow
 │   ├── Adapter.esql                 # Compute/Router logic
 │   ├── expected/
-│   │   ├── Adapter.route.xml        # golden: expected Camel route (canonical)
+│   │   ├── Adapter-route.xml        # golden: expected Camel route (canonical)
 │   │   └── e2e/
 │   │       ├── dataset.yml          # input messages + expected queues/fields
 │   │       └── messages/*.xml       # test input messages

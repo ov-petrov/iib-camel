@@ -41,7 +41,7 @@ class RouteGeneratorTest {
     @Test
     void matchesGoldenFile() throws Exception {
         try (var golden = getClass().getResourceAsStream(
-                "/corpus/corr-01-simple-adapter/expected/Adapter.route.xml")) {
+                "/corpus/corr-01-simple-adapter/expected/Adapter-route.xml")) {
             String expected = new String(golden.readAllBytes(), StandardCharsets.UTF_8);
             assertEquals(expected, new RouteGenerator(adapterFlow()).generate());
         }

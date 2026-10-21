@@ -32,7 +32,7 @@ converter/src/test/resources/corpus/
 │   ├── Adapter.msgflow              # исходный поток
 │   ├── Adapter.esql                 # логика Compute/Router
 │   ├── expected/
-│   │   ├── Adapter.route.xml        # golden: ожидаемый маршрут Camel (канонический)
+│   │   ├── Adapter-route.xml        # golden: ожидаемый маршрут Camel (канонический)
 │   │   └── e2e/
 │   │       ├── dataset.yml          # входные сообщения + ожидаемые очереди/поля
 │   │       └── messages/*.xml       # тестовые входные сообщения

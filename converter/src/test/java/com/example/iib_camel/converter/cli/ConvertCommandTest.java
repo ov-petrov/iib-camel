@@ -30,13 +30,13 @@ class ConvertCommandTest {
         Path output = tempDir.resolve("out");
 
         String golden = Files.readString(
-                Path.of("src/test/resources/corpus/corr-01-simple-adapter/expected/Adapter.route.xml"),
+                Path.of("src/test/resources/corpus/corr-01-simple-adapter/expected/Adapter-route.xml"),
                 StandardCharsets.UTF_8);
 
         int exit = run(input, output);
 
         assertEquals(0, exit, "успешная конвертация → код 0");
-        assertEquals(golden, Files.readString(output.resolve("Adapter.route.xml"),
+        assertEquals(golden, Files.readString(output.resolve("Adapter-route.xml"),
                 StandardCharsets.UTF_8), "маршрут побайтово равен golden-файлу");
         String report = Files.readString(output.resolve("migration-report.md"), StandardCharsets.UTF_8);
         assertTrue(report.contains("Adapter.msgflow"));

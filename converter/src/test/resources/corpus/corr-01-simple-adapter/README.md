@@ -26,6 +26,6 @@ ESQL — стандартный (`BROKER SCHEMA`, `CREATE COMPUTE MODULE`).
 
 ## Статус golden
 
-`expected/` пока содержит только e2e-набор. Golden-файл маршрута (`Adapter.route.xml`)
+`expected/` пока содержит только e2e-набор. Golden-файл маршрута (`Adapter-route.xml`)
 создаётся на первом прогоне конвертера и утверждается вручную (см. стратегию тестирования,
 раздел 3.2: «first appearance — generation without golden»).

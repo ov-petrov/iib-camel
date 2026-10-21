@@ -24,7 +24,7 @@ import java.util.stream.Stream;
  *   iib-camel-converter convert --input &lt;файл|.msgflow-каталог&gt; [--output каталог]
  *
  * Конвейер (FR-2.1, Must): парсер → генератор маршрутов → вывод + отчёт.
- * Выход: для каждого .msgflow — файл &lt;Имя&gt;.route.xml; единый migration-report.md.
+ * Выход: для каждого .msgflow — файл &lt;Имя&gt;-route.xml; единый migration-report.md.
  * Коды возврата — как у diagram: 0 — успех, 2 — частичный успех, 3 — ни один файл.
  */
 @Command(name = "convert",
@@ -66,7 +66,7 @@ public final class ConvertCommand implements Callable<Integer> {
             try {
                 MsgFlow flow = parse(file);
                 String routeId = flow.name().replaceAll("\\.msgflow$", "");
-                Path routeFile = output.resolve(routeId + ".route.xml");
+                Path routeFile = output.resolve(routeId + "-route.xml");
                 String xml = new RouteGenerator(flow).generate();
                 Files.writeString(routeFile, xml, StandardCharsets.UTF_8);
                 convertedFiles++;
