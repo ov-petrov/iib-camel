@@ -1,0 +1,13 @@
+package com.example.iib_camel;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class IibCamelApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(IibCamelApplication.class, args);
+    }
+
+}
