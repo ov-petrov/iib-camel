@@ -15,13 +15,3 @@ public record MsgFlow(String name, List<FlowNode> nodes, List<FlowConnection> co
                 .orElseThrow(() -> new IllegalArgumentException("узел не найден: " + id));
     }
 }
-
-/**
- * Узел потока. kind — каноническое имя типа без префикса ComIbm и суффикса .msgnode
- * (например MQInput, Compute, Route); для подпотоков — \"Subflow\".
- */
-record FlowNode(String id, String kind, String label, Map<String, String> properties,
-                List<String> dynamicOutTerminals) {}
-
-record FlowConnection(String sourceNodeId, String sourceTerminal,
-                      String targetNodeId, String targetTerminal) {}
