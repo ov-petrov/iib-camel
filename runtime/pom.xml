@@ -83,11 +83,13 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
-        <!-- Встроенный брокер для e2e (L3, docs/test-strategy.ru.md) -->
+        <!-- Встроенный брокер: runtime-зависимость, чтобы boot-jar работал «из коробки»
+             (spring.artemis.mode=EMBEDDED по умолчанию). Для внешнего брокера
+             переопределяется через spring.artemis.mode=NATIVE + spring.artemis.host/port. -->
         <dependency>
             <groupId>org.apache.activemq</groupId>
             <artifactId>artemis-jakarta-server</artifactId>
-            <scope>test</scope>
+            <scope>compile</scope>
         </dependency>
     </dependencies>
 
