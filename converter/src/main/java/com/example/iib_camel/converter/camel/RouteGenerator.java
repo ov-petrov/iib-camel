@@ -16,6 +16,9 @@ import java.util.Optional;
 public final class RouteGenerator {
 
     private static final String CAMEL_NS = "http://camel.apache.org/schema/spring";
+    /** Базовый набор узлов (FR-2.2, Must) — используется генератором и отчётом FR-5.1. */
+    public static final java.util.Set<String> SUPPORTED_BASE_KINDS =
+            java.util.Set.of("MQInput", "MQOutput", "Compute", "Route");
 
     private final MsgFlow flow;
 

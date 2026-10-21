@@ -1,5 +1,6 @@
 package com.example.iib_camel.converter;
 
+import com.example.iib_camel.converter.cli.ConvertCommand;
 import com.example.iib_camel.converter.cli.DiagramCommand;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
@@ -8,15 +9,13 @@ import picocli.CommandLine.Command;
  * Корневая точка входа конвертера: one-shot CLI (см. docs/functional-requirements.ru.md, FR-7.1).
  *
  * Запускается по команде, выполняет свою работу и завершается; фоновых процессов и веб-служб нет.
- * Пока реализована единственная подкоманда {@code diagram} (docs/diagram-renderer-design.ru.md);
- * остальные конвейеры конвертации (маршруты Camel, мапперы, отчёт — FR-2.x…FR-5.x) добавляются
- * новыми подкомандами по мере реализации.
+ * Подкоманды {@code diagram} (docs/diagram-renderer-design.ru.md) и {@code convert}
+ * (FR-2.1…FR-2.7, FR-5.1) регистрируются в рантайме.
  */
 @Command(name = "iib-camel-converter",
          mixinStandardHelpOptions = true,
          version = "iib-camel-converter 0.1.0-SNAPSHOT",
-         description = "Миграция IIB → Spring Boot + Apache Camel: one-shot CLI конвертер.",
-         subcommands = { DiagramCommand.class })
+         description = "Миграция IIB → Spring Boot + Apache Camel: one-shot CLI конвертер.")
 public final class ConverterApplication implements Runnable {
 
     @Override
@@ -27,6 +26,8 @@ public final class ConverterApplication implements Runnable {
 
     public static void main(String[] args) {
         CommandLine commandLine = new CommandLine(new ConverterApplication());
+        commandLine.addSubcommand("diagram", new DiagramCommand());
+        commandLine.addSubcommand("convert", new ConvertCommand());
         commandLine.setParameterExceptionHandler((ex, sub) -> {
             // неверные аргументы → код возврата 1 (docs/diagram-renderer-design.ru.md, раздел 5)
             System.err.println("Ошибка аргументов: " + ex.getMessage());
