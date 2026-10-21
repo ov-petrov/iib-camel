@@ -105,3 +105,4 @@ iib-camel/
 - [Функциональные требования (RU)](docs/functional-requirements.ru.md)
 - [Functional requirements (EN)](docs/functional-requirements.en.md)
 - [Стратегия тестирования (RU)](docs/test-strategy.ru.md) & [Testing strategy (EN)](docs/test-strategy.en.md)
+- [Дизайн рендерера диаграмм (RU)](docs/diagram-renderer-design.ru.md) & [Diagram renderer design (EN)](docs/diagram-renderer-design.en.md)

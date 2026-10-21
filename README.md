@@ -106,3 +106,4 @@ requirements (MoSCoW) and the testing strategy are fixed; converter implementati
 - [Functional requirements (RU)](docs/functional-requirements.ru.md)
 - [Functional requirements (EN)](docs/functional-requirements.en.md)
 - [Testing strategy (EN)](docs/test-strategy.en.md) & [Testing strategy (RU)](docs/test-strategy.ru.md)
+- [Diagram renderer design (EN)](docs/diagram-renderer-design.en.md) & [Design: diagram renderer (RU)](docs/diagram-renderer-design.ru.md)
