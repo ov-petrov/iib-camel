@@ -1,0 +1,27 @@
+package com.example.iib_camel.converter.msgflow;
+
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Промежуточная модель (IR) потока сообщений — FR-1.4 из docs/functional-requirements.ru.md.
+ * Терминалы "out"/"catch"/... нормализованы без префиксов OutTerminal./InTerminal..
+ */
+public record MsgFlow(String name, List<FlowNode> nodes, List<FlowConnection> connections) {
+
+    public FlowNode node(String id) {
+        return nodes.stream().filter(n -> n.id().equals(id))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("узел не найден: " + id));
+    }
+}
+
+/**
+ * Узел потока. kind — каноническое имя типа без префикса ComIbm и суффикса .msgnode
+ * (например MQInput, Compute, Route); для подпотоков — \"Subflow\".
+ */
+record FlowNode(String id, String kind, String label, Map<String, String> properties,
+                List<String> dynamicOutTerminals) {}
+
+record FlowConnection(String sourceNodeId, String sourceTerminal,
+                      String targetNodeId, String targetTerminal) {}
