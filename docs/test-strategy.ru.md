@@ -46,35 +46,36 @@ converter/src/test/resources/corpus/
 Поток, который модифицирует сообщение и маршрутизирует его по ветвям:
 
 ```
-MQInput(ADAPTER.IN) → Compute (изменяет тело, выставляет MQMD.Priority)
-                   → Router (Filter: `Body.Order.priority GT 5`)
-                       output: true  → MQOutput(PRIORITY.Q)
-                       output: false → MQOutput(DEFAULT.Q)
-                       catch/fail    → MQOutput(ERROR.Q)
+MQInput(ADAPTER.IN) → Compute (копирует тело, ставит метку MQMD.ApplicationIdData)
+                   → Route (`filterPattern: $Body/Adapter/Order/status='HIGH'`)
+                       output: Match   → MQOutput(PRIORITY.Q)
+                       output: Default → MQOutput(DEFAULT.Q)
+                       catch/fail      → MQOutput(ERROR.Q)
 ```
 
 В repo это сохраняется как настоящие файлы `.msgflow` (XML) и `.esql`, например:
 
 ```xml
-<!-- Adapter.msgflow (фрагмент, схема упрощена) -->
-<p:inputNode id="In1" type="MQInputNode">
-  <e:property name="queueName" value="ADAPTER.IN"/>
-</p:inputNode>
-<p:computeNode id="Compute1" esqlModule="Adapter_Compute1"/>
-<p:routerNode id="Router1">
-  <!-- фильтры Router — предикаты ESQL, терминалов: matchDefault/match1 -->
-</p:routerNode>
+<!-- Adapter.msgflow (фрагмент): формат — Eclipse EMF/XMI, как в реальных файлах IIB -->
+<nodes xmi:type="ComIbmMQInput.msgnode:FCMComposite_1" xmi:id="Input"
+       queueName="ADAPTER.IN" messageDomainProperty="XMLNSC"/>
+<nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="Enrich"
+       computeExpression="esql://routine/adapter#Adapter_Compute1.Main"/>
+<nodes xmi:type="ComIbmRoute.msgnode:FCMComposite_1" xmi:id="RouteByStatus">
+  <filterTable filterPattern="$Body/Adapter/Order/status='HIGH'" routingOutputTerminal="Match"/>
+</nodes>
 ```
 
 ```sql
 -- Adapter_Compute1.esql (фрагмент)
-CREATE FUNCTION Compute1() RETURNS BOOLEAN
-BEGIN
-  SET OutputRoot = InputRoot;
-  SET OutputRoot.MQMD.Priority = 1;
-  SET OutputRoot.Body = InputRoot.Body;
-  RETURN TRUE;
-END;
+CREATE COMPUTE MODULE Adapter_Compute1
+  CREATE FUNCTION Main() RETURNS BOOLEAN
+  BEGIN
+    SET OutputRoot = InputRoot;
+    SET OutputRoot.MQMD.ApplicationIdData = 'IIB-CAMEL-MIG';
+    RETURN TRUE;
+  END;
+END MODULE;
 ```
 
 ## 3. Уровни тестирования
@@ -132,22 +133,23 @@ END;
 
 ```yaml
 cases:
-  - name: high-priority-order-routed-to-priority-queue
+  - name: high-status-order-routed-to-priority-queue
     input:
       queue: ADAPTER.IN
-      message: messages/order-high.xml       # входное сообщение
-    expect:
-      queue: PRIORITY.Q                      # целевая очередь
+      message: messages/order-high.xml
       mqmd:
-        priority: 6                          # модификация Compute
-      body:
-        order/status: NEW                    # поля тела
-  - name: default-order-routed-to-default-queue
+        priority: 8
+    expect:
+      queue: ADAPTER.PRIORITY.Q                 # целевая очередь
+      mqmd:
+        priority: 8
+        applicationIdData: IIB-CAMEL-MIG        # модификация Compute
+  - name: regular-order-routed-to-default-queue
     input:  { queue: ADAPTER.IN, message: messages/order-low.xml }
-    expect: { queue: DEFAULT.Q }
-  - name: malformed-message-fails-to-error-queue
-    input:  { queue: ADAPTER.IN, message: messages/broken.xml }
-    expect: { queue: ERROR.Q }               # ветка catch/fail
+    expect: { queue: ADAPTER.DEFAULT.Q }
+  - name: malformed-message-goes-to-error-queue
+    input:  { queue: ADAPTER.IN, message: messages/order-broken.xml }
+    expect: { queue: ADAPTER.ERROR.Q }          # ветка catch/fail
 ```
 
 Каждый кейс: отправить входное сообщение → дождаться/прочитать из ожидаемой очереди → сравнить

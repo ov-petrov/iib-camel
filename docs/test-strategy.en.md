@@ -46,35 +46,36 @@ converter/src/test/resources/corpus/
 A flow that modifies a message and routes it by branches:
 
 ```
-MQInput(ADAPTER.IN) → Compute (modifies the body, sets MQMD.Priority)
-                   → Router (Filter: `Body.Order.priority GT 5`)
-                       output: true  → MQOutput(PRIORITY.Q)
-                       output: false → MQOutput(DEFAULT.Q)
-                       catch/fail    → MQOutput(ERROR.Q)
+MQInput(ADAPTER.IN) → Compute (copies the body, stamps MQMD.ApplicationIdData)
+                   → Route (`filterPattern: $Body/Adapter/Order/status='HIGH'`)
+                       output: Match   → MQOutput(PRIORITY.Q)
+                       output: Default → MQOutput(DEFAULT.Q)
+                       catch/fail      → MQOutput(ERROR.Q)
 ```
 
 In the repository it is kept as real `.msgflow` (XML) and `.esql` files, for example:
 
 ```xml
-<!-- Adapter.msgflow (fragment, simplified schema) -->
-<p:inputNode id="In1" type="MQInputNode">
-  <e:property name="queueName" value="ADAPTER.IN"/>
-</p:inputNode>
-<p:computeNode id="Compute1" esqlModule="Adapter_Compute1"/>
-<p:routerNode id="Router1">
-  <!-- Router filters are ESQL predicates, terminals: matchDefault/match1 -->
-</p:routerNode>
+<!-- Adapter.msgflow (fragment): the format is Eclipse EMF/XMI, as in real IIB files -->
+<nodes xmi:type="ComIbmMQInput.msgnode:FCMComposite_1" xmi:id="Input"
+       queueName="ADAPTER.IN" messageDomainProperty="XMLNSC"/>
+<nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="Enrich"
+       computeExpression="esql://routine/adapter#Adapter_Compute1.Main"/>
+<nodes xmi:type="ComIbmRoute.msgnode:FCMComposite_1" xmi:id="RouteByStatus">
+  <filterTable filterPattern="$Body/Adapter/Order/status='HIGH'" routingOutputTerminal="Match"/>
+</nodes>
 ```
 
 ```sql
 -- Adapter_Compute1.esql (fragment)
-CREATE FUNCTION Compute1() RETURNS BOOLEAN
-BEGIN
-  SET OutputRoot = InputRoot;
-  SET OutputRoot.MQMD.Priority = 1;
-  SET OutputRoot.Body = InputRoot.Body;
-  RETURN TRUE;
-END;
+CREATE COMPUTE MODULE Adapter_Compute1
+  CREATE FUNCTION Main() RETURNS BOOLEAN
+  BEGIN
+    SET OutputRoot = InputRoot;
+    SET OutputRoot.MQMD.ApplicationIdData = 'IIB-CAMEL-MIG';
+    RETURN TRUE;
+  END;
+END MODULE;
 ```
 
 ## 3. Testing levels
@@ -133,22 +134,23 @@ Goal: execute the generated route **in the real runtime** and verify behavior.
 
 ```yaml
 cases:
-  - name: high-priority-order-routed-to-priority-queue
+  - name: high-status-order-routed-to-priority-queue
     input:
       queue: ADAPTER.IN
-      message: messages/order-high.xml       # input message
-    expect:
-      queue: PRIORITY.Q                      # target queue
+      message: messages/order-high.xml
       mqmd:
-        priority: 6                          # Compute modification
-      body:
-        order/status: NEW                    # body fields
-  - name: default-order-routed-to-default-queue
+        priority: 8
+    expect:
+      queue: ADAPTER.PRIORITY.Q                 # target queue
+      mqmd:
+        priority: 8
+        applicationIdData: IIB-CAMEL-MIG        # Compute modification
+  - name: regular-order-routed-to-default-queue
     input:  { queue: ADAPTER.IN, message: messages/order-low.xml }
-    expect: { queue: DEFAULT.Q }
-  - name: malformed-message-fails-to-error-queue
-    input:  { queue: ADAPTER.IN, message: messages/broken.xml }
-    expect: { queue: ERROR.Q }               # catch/fail branch
+    expect: { queue: ADAPTER.DEFAULT.Q }
+  - name: malformed-message-goes-to-error-queue
+    input:  { queue: ADAPTER.IN, message: messages/order-broken.xml }
+    expect: { queue: ADAPTER.ERROR.Q }          # catch/fail branch
 ```
 
 Each case: send the input message → await/read from the expected queue → compare MQMD fields and

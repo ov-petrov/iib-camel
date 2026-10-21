@@ -1,0 +1,29 @@
+cases:
+  - name: high-status-order-routed-to-priority-queue
+    input:
+      queue: ADAPTER.IN
+      message: messages/order-high.xml
+      mqmd:
+        priority: 8
+    expect:
+      queue: ADAPTER.PRIORITY.Q
+      mqmd:
+        priority: 8
+        applicationIdData: IIB-CAMEL-MIG
+  - name: regular-order-routed-to-default-queue
+    input:
+      queue: ADAPTER.IN
+      message: messages/order-low.xml
+      mqmd:
+        priority: 2
+    expect:
+      queue: ADAPTER.DEFAULT.Q
+      mqmd:
+        priority: 2
+        applicationIdData: IIB-CAMEL-MIG
+  - name: malformed-message-goes-to-error-queue
+    input:
+      queue: ADAPTER.IN
+      message: messages/order-broken.xml
+    expect:
+      queue: ADAPTER.ERROR.Q

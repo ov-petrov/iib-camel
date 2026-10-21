@@ -1,0 +1,7 @@
+<Adapter>
+  <Order>
+    <id>ORD-0001</id>
+    <status>HIGH</status>
+    <amount>1000.00</amount>
+  </Order>
+</Adapter>
