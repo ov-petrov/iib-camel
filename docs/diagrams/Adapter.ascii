@@ -1,0 +1,6 @@
+MQInput «Adapter Input» [ADAPTER.IN]
+├─ out → Compute «Stamp MQMD» [Adapter_Compute1.Main]
+│  └─ out → Route «Route by status»
+│     ├─ Match → MQOutput «High priority orders» [ADAPTER.PRIORITY.Q]
+│     └─ Default → MQOutput «Regular orders» [ADAPTER.DEFAULT.Q]
+└─ catch → MQOutput «Malformed messages» [ADAPTER.ERROR.Q]

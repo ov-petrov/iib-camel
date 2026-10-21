@@ -1,0 +1,16 @@
+flowchart LR
+    N1["Adapter Input<br/>MQInput<br/>ADAPTER.IN"]:::input
+    N2["Stamp MQMD<br/>Compute<br/>Adapter_Compute1.Main"]:::process
+    N3["Route by status<br/>Route"]:::route
+    N4["High priority orders<br/>MQOutput<br/>ADAPTER.PRIORITY.Q"]:::output
+    N5["Regular orders<br/>MQOutput<br/>ADAPTER.DEFAULT.Q"]:::output
+    N6["Malformed messages<br/>MQOutput<br/>ADAPTER.ERROR.Q"]:::output
+    N1 --> N2
+    N2 --> N3
+    N3 --> N4
+    N3 --> N5
+    N1 -. catch .-> N6
+    classDef input fill:#e8eaf6,stroke:#3949ab,stroke-width:1px
+    classDef output fill:#e8f5e9,stroke:#2e7d32,stroke-width:1px
+    classDef process fill:#ede7f6,stroke:#4527a0,stroke-width:1px
+    classDef route fill:#fff3e0,stroke:#e65100,stroke-width:1px

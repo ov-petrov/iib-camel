@@ -1,0 +1,44 @@
+// Сгенерировано конвертером iib-camel (diagram --format adoc, веха M1).
+= Adapter
+:source-file: Adapter.msgflow
+
+Файл потока сообщений IIB из корпуса конвертеров.
+
+== Диаграмма
+
+Дерево-конспект читается как текст и как диаграмма после конвертации
+asciidoctor; детали связей — в таблице ниже.
+
+----
+MQInput «Adapter Input» [ADAPTER.IN]
+├─ out → Compute «Stamp MQMD» [Adapter_Compute1.Main]
+│  └─ out → Route «Route by status»
+│     ├─ Match → MQOutput «High priority orders» [ADAPTER.PRIORITY.Q]
+│     └─ Default → MQOutput «Regular orders» [ADAPTER.DEFAULT.Q]
+└─ catch → MQOutput «Malformed messages» [ADAPTER.ERROR.Q]
+----
+
+== Узлы
+
+[cols="1,1,2,2" options="header"]
+|===
+| id | тип | имя | свойства
+| Input | MQInput | Adapter Input | queueName = ADAPTER.IN
+| Enrich | Compute | Stamp MQMD | esql = Adapter_Compute1.Main
+| RouteByStatus | Route | Route by status | —
+| PriorityQueue | MQOutput | High priority orders | queueName = ADAPTER.PRIORITY.Q
+| DefaultQueue | MQOutput | Regular orders | queueName = ADAPTER.DEFAULT.Q
+| ErrorQueue | MQOutput | Malformed messages | queueName = ADAPTER.ERROR.Q
+|===
+
+== Связи
+
+[cols="1,1,2,1" options="header"]
+|===
+| source | терминал | target | терминал
+| Input | out | Enrich | in
+| Enrich | out | RouteByStatus | in
+| RouteByStatus | Match | PriorityQueue | in
+| RouteByStatus | Default | DefaultQueue | in
+| Input | catch | ErrorQueue | in
+|===

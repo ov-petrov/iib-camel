@@ -1,22 +1,37 @@
 package com.example.iib_camel.converter;
 
-/**
- * One-shot CLI application: IIB artifacts converter.
- *
- * Запускается по команде, выполняет конвертацию указанных артефактов (.msgflow, .subflow, .esql
- * и др.) и завершается. Не оставляет фоновых процессов и не поднимает веб-служб.
- *
- * Функциональные требования: docs/functional-requirements.ru.md (раздел 3).
- */
-public final class ConverterApplication {
+import com.example.iib_camel.converter.cli.DiagramCommand;
+import picocli.CommandLine;
+import picocli.CommandLine.Command;
 
-    private ConverterApplication() {
+/**
+ * Корневая точка входа конвертера: one-shot CLI (см. docs/functional-requirements.ru.md, FR-7.1).
+ *
+ * Запускается по команде, выполняет свою работу и завершается; фоновых процессов и веб-служб нет.
+ * Пока реализована единственная подкоманда {@code diagram} (docs/diagram-renderer-design.ru.md);
+ * остальные конвейеры конвертации (маршруты Camel, мапперы, отчёт — FR-2.x…FR-5.x) добавляются
+ * новыми подкомандами по мере реализации.
+ */
+@Command(name = "iib-camel-converter",
+         mixinStandardHelpOptions = true,
+         version = "iib-camel-converter 0.1.0-SNAPSHOT",
+         description = "Миграция IIB → Spring Boot + Apache Camel: one-shot CLI конвертер.",
+         subcommands = { DiagramCommand.class })
+public final class ConverterApplication implements Runnable {
+
+    @Override
+    public void run() {
+        // Приложение вызвано без подкоманды — печатаем справку
+        CommandLine.usage(this, System.out);
     }
 
     public static void main(String[] args) {
-        // TODO: реализовать разбор аргументов и конвейер конвертации
-        // (см. docs/functional-requirements.ru.md, FR-7.1)
-        System.out.println("iib-camel converter: CLI is not implemented yet.");
-        System.out.println("Planned usage: converter --input <dir> --output <dir> [options]");
+        CommandLine commandLine = new CommandLine(new ConverterApplication());
+        commandLine.setParameterExceptionHandler((ex, sub) -> {
+            // неверные аргументы → код возврата 1 (docs/diagram-renderer-design.ru.md, раздел 5)
+            System.err.println("Ошибка аргументов: " + ex.getMessage());
+            return 1;
+        });
+        System.exit(commandLine.execute(args));
     }
 }
