@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<routes xmlns="http://camel.apache.org/schema/spring">
+  <!-- source: узел Input (MQInput) -->
+  <route id="Adapter">
+    <from uri="jms:ADAPTER.IN"/>
+    <doTry>
+      <!-- source: узел Enrich (Compute) -->
+      <to uri="bean:adapterCompute1"/>
+      <!-- source: узел RouteByStatus (Route) -->
+      <choice>
+        <when>
+          <simple>${body.order.status} == 'HIGH'</simple>
+          <!-- source: узел PriorityQueue (MQOutput) -->
+          <to uri="jms:ADAPTER.PRIORITY.Q"/>
+        </when>
+        <otherwise>
+          <!-- source: узел DefaultQueue (MQOutput) -->
+          <to uri="jms:ADAPTER.DEFAULT.Q"/>
+        </otherwise>
+      </choice>
+      <doCatch>
+        <exception>java.lang.Exception</exception>
+        <!-- source: узел ErrorQueue (MQOutput) -->
+        <to uri="jms:ADAPTER.ERROR.Q"/>
+      </doCatch>
+    </doTry>
+  </route>
+</routes>

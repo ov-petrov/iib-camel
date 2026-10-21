@@ -1,0 +1,2 @@
+# Регистрация загрузчика XML-маршрутов под ключом route.xml (см. CamelRoutesLoaderConfig).
+class=org.apache.camel.dsl.xml.io.CamelXmlRoutesBuilderLoader
