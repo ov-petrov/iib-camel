@@ -3,26 +3,13 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <parent>
-        <groupId>ru.petrov-ov.tools</groupId>
+        <groupId>ru.petrovov.iib_camel</groupId>
         <artifactId>iib-camel</artifactId>
         <version>0.0.1-SNAPSHOT</version>
     </parent>
     <artifactId>iib-camel-runtime</artifactId>
     <name>iib-camel-runtime</name>
     <description>Runtime service executing converted Apache Camel routes (Spring Boot)</description>
-    <url/>
-    <licenses>
-        <license/>
-    </licenses>
-    <developers>
-        <developer/>
-    </developers>
-    <scm>
-        <connection/>
-        <developerConnection/>
-        <tag/>
-        <url/>
-    </scm>
 
     <properties>
         <camel.version>4.22.0</camel.version>
@@ -88,7 +75,7 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>ru.petrov-ov.tools</groupId>
+            <groupId>ru.petrovov.iib_camel</groupId>
             <artifactId>iib-camel-converter</artifactId>
             <version>${project.version}</version>
             <scope>test</scope>
@@ -101,6 +88,19 @@
     </dependencies>
 
     <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+            </resource>
+            <resource>
+                <directory>${project.basedir}/..</directory>
+                <targetPath>META-INF</targetPath>
+                <includes>
+                    <include>LICENSE</include>
+                    <include>NOTICE</include>
+                </includes>
+            </resource>
+        </resources>
         <testResources>
             <testResource>
                 <directory>src/test/resources</directory>

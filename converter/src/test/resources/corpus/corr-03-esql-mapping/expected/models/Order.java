@@ -1,4 +1,4 @@
-package com.example.iib_camel.runtime.generated.model;
+package ru.petrovov.iib_camel.runtime.generated.model;
 
 // Модель из ESQL-путей; типы String (FR-3.4).
 public class Order {

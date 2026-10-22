@@ -492,7 +492,7 @@ MapStruct целесообразно вводить после решения п
 
 ## 11. Воспроизводимость и материалы проверки
 
-Корень проекта в среде анализа: `/Users/oleg/projects/opencode/iib-camel`. Команды ниже выполняются из него; пути результатов `/tmp` приведены для повторения анализа и не являются частью поставки.
+Команды ниже выполняются из корня репозитория. Пути результатов в `/tmp` — локальные артефакты проверки, они не входят в репозиторий.
 
 ### 11.1. Основные команды
 
@@ -534,39 +534,34 @@ END MODULE;
 
 ### 11.2. Локальные результаты этой сессии
 
-- [Полный Maven log](/tmp/iib-camel-mvn-verify-20261022.log).
-- [Результаты CLI-проверок](/tmp/iib-camel-analysis-20261022/cli-results.json).
-- [Исходник проб конвертера](/tmp/iib-camel-analysis-20261022/ConverterProbe.java) и [вывод](/tmp/iib-camel-analysis-20261022/converter-probes.txt).
-- [Исходник runtime-проб](/tmp/iib-camel-analysis-20261022/RuntimeProbe.java) и [вывод](/tmp/iib-camel-analysis-20261022/RuntimeProbe.log).
-- [Исполнение свежего corr-01](/tmp/iib-camel-analysis-20261022/FlowExecutionProbe.java) и [вывод](/tmp/iib-camel-analysis-20261022/FlowExecutionProbe.log).
-- [Ошибка компиляции generated Java](/tmp/iib-camel-analysis-20261022/java-keyword/javac.txt).
+Проверки этой сессии также создали Maven log, результаты CLI-проверок и исходники/выводы временных проб в `/tmp/iib-camel-mvn-verify-20261022.log` и `/tmp/iib-camel-analysis-20261022/`. Это локальные артефакты, которых нет в репозитории и которые могут быть удалены ОС.
 
-Файлы в `/tmp` могут быть удалены ОС. Существенные входы, наблюдения и критерии исправления сохранены в основном тексте документа; временные программы не включены в тестовую инфраструктуру. При исправлении каждый подтверждённый случай следует перенести в постоянный regression corpus.
+Существенные входы, наблюдения и критерии исправления сохранены в основном тексте документа; временные программы не включены в тестовую инфраструктуру. При исправлении каждый подтверждённый случай следует перенести в постоянный regression corpus.
 
 ### 11.3. Навигация по исходникам
 
-Ссылки привязаны к рабочему каталогу и проверенной ревизии; номера строк при последующих исправлениях могут измениться.
+Ссылки в разборе дефектов закреплены за исходной ревизией `6858b6f`, к которой относятся наблюдения. Навигация ниже ведёт на текущие файлы репозитория.
 
-- [Функциональные требования RU](/Users/oleg/projects/opencode/iib-camel/docs/functional-requirements.ru.md).
-- [Стратегия тестирования RU](/Users/oleg/projects/opencode/iib-camel/docs/test-strategy.ru.md).
-- [Руководство по миграции](/Users/oleg/projects/opencode/iib-camel/docs/migration-guide.ru.md).
-- [Дизайн диаграмм и IR](/Users/oleg/projects/opencode/iib-camel/docs/diagram-renderer-design.ru.md).
-- [Штатный e2e-тест](/Users/oleg/projects/opencode/iib-camel/runtime/src/test/java/com/example/iib_camel/runtime/e2e/E2eDatasetTest.java).
+- [Функциональные требования RU](../docs/functional-requirements.ru.md).
+- [Стратегия тестирования RU](../docs/test-strategy.ru.md).
+- [Руководство по миграции](../docs/migration-guide.ru.md).
+- [Дизайн диаграмм и IR](../docs/diagram-renderer-design.ru.md).
+- [Штатный e2e-тест](../runtime/src/test/java/ru/petrovov/iib_camel/runtime/e2e/E2eDatasetTest.java).
 
-[src-manual-bean]: /Users/oleg/projects/opencode/iib-camel/runtime/src/main/java/com/example/iib_camel/runtime/compute/AdapterCompute1.java:28
-[src-route-predicate]: /Users/oleg/projects/opencode/iib-camel/converter/src/main/java/com/example/iib_camel/converter/camel/RouteGenerator.java:394
-[src-esql-parser]: /Users/oleg/projects/opencode/iib-camel/converter/src/main/java/com/example/iib_camel/converter/esql/EsqlParser.java:46
-[src-esql-translator]: /Users/oleg/projects/opencode/iib-camel/converter/src/main/java/com/example/iib_camel/converter/esql/EsqlTranslator.java:62
-[src-flow-node]: /Users/oleg/projects/opencode/iib-camel/converter/src/main/java/com/example/iib_camel/converter/msgflow/MsgFlowParser.java:64
-[src-route-choice]: /Users/oleg/projects/opencode/iib-camel/converter/src/main/java/com/example/iib_camel/converter/camel/RouteGenerator.java:251
-[src-runtime-body]: /Users/oleg/projects/opencode/iib-camel/runtime/src/main/java/com/example/iib_camel/runtime/compute/AbstractComputeBean.java:69
-[src-subflow]: /Users/oleg/projects/opencode/iib-camel/converter/src/main/java/com/example/iib_camel/converter/camel/RouteGenerator.java:231
-[src-route-walk]: /Users/oleg/projects/opencode/iib-camel/converter/src/main/java/com/example/iib_camel/converter/camel/RouteGenerator.java:142
-[src-route-catch]: /Users/oleg/projects/opencode/iib-camel/converter/src/main/java/com/example/iib_camel/converter/camel/RouteGenerator.java:275
-[src-convert]: /Users/oleg/projects/opencode/iib-camel/converter/src/main/java/com/example/iib_camel/converter/cli/ConvertCommand.java:80
-[src-compute-diagnosis]: /Users/oleg/projects/opencode/iib-camel/converter/src/main/java/com/example/iib_camel/converter/camel/RouteGenerator.java:322
-[src-java-model]: /Users/oleg/projects/opencode/iib-camel/converter/src/main/java/com/example/iib_camel/converter/esql/EsqlToJavaGenerator.java:122
-[src-analyze-write]: /Users/oleg/projects/opencode/iib-camel/converter/src/main/java/com/example/iib_camel/converter/cli/AnalyzeCommand.java:167
-[src-diagram-names]: /Users/oleg/projects/opencode/iib-camel/converter/src/main/java/com/example/iib_camel/converter/diagram/DiagramNames.java:15
-[src-flow-parser]: /Users/oleg/projects/opencode/iib-camel/converter/src/main/java/com/example/iib_camel/converter/msgflow/MsgFlowParser.java:27
-[src-convert-exit]: /Users/oleg/projects/opencode/iib-camel/converter/src/main/java/com/example/iib_camel/converter/cli/ConvertCommand.java:201
+[src-manual-bean]: https://github.com/ov-petrov/iib-camel/blob/6858b6f6dc5c3f5dbcd14b07376472690951bbeb/runtime/src/main/java/com/example/iib_camel/runtime/compute/AdapterCompute1.java#L28
+[src-route-predicate]: https://github.com/ov-petrov/iib-camel/blob/6858b6f6dc5c3f5dbcd14b07376472690951bbeb/converter/src/main/java/com/example/iib_camel/converter/camel/RouteGenerator.java#L394
+[src-esql-parser]: https://github.com/ov-petrov/iib-camel/blob/6858b6f6dc5c3f5dbcd14b07376472690951bbeb/converter/src/main/java/com/example/iib_camel/converter/esql/EsqlParser.java#L46
+[src-esql-translator]: https://github.com/ov-petrov/iib-camel/blob/6858b6f6dc5c3f5dbcd14b07376472690951bbeb/converter/src/main/java/com/example/iib_camel/converter/esql/EsqlTranslator.java#L62
+[src-flow-node]: https://github.com/ov-petrov/iib-camel/blob/6858b6f6dc5c3f5dbcd14b07376472690951bbeb/converter/src/main/java/com/example/iib_camel/converter/msgflow/MsgFlowParser.java#L64
+[src-route-choice]: https://github.com/ov-petrov/iib-camel/blob/6858b6f6dc5c3f5dbcd14b07376472690951bbeb/converter/src/main/java/com/example/iib_camel/converter/camel/RouteGenerator.java#L251
+[src-runtime-body]: https://github.com/ov-petrov/iib-camel/blob/6858b6f6dc5c3f5dbcd14b07376472690951bbeb/runtime/src/main/java/com/example/iib_camel/runtime/compute/AbstractComputeBean.java#L69
+[src-subflow]: https://github.com/ov-petrov/iib-camel/blob/6858b6f6dc5c3f5dbcd14b07376472690951bbeb/converter/src/main/java/com/example/iib_camel/converter/camel/RouteGenerator.java#L231
+[src-route-walk]: https://github.com/ov-petrov/iib-camel/blob/6858b6f6dc5c3f5dbcd14b07376472690951bbeb/converter/src/main/java/com/example/iib_camel/converter/camel/RouteGenerator.java#L142
+[src-route-catch]: https://github.com/ov-petrov/iib-camel/blob/6858b6f6dc5c3f5dbcd14b07376472690951bbeb/converter/src/main/java/com/example/iib_camel/converter/camel/RouteGenerator.java#L275
+[src-convert]: https://github.com/ov-petrov/iib-camel/blob/6858b6f6dc5c3f5dbcd14b07376472690951bbeb/converter/src/main/java/com/example/iib_camel/converter/cli/ConvertCommand.java#L80
+[src-compute-diagnosis]: https://github.com/ov-petrov/iib-camel/blob/6858b6f6dc5c3f5dbcd14b07376472690951bbeb/converter/src/main/java/com/example/iib_camel/converter/camel/RouteGenerator.java#L322
+[src-java-model]: https://github.com/ov-petrov/iib-camel/blob/6858b6f6dc5c3f5dbcd14b07376472690951bbeb/converter/src/main/java/com/example/iib_camel/converter/esql/EsqlToJavaGenerator.java#L122
+[src-analyze-write]: https://github.com/ov-petrov/iib-camel/blob/6858b6f6dc5c3f5dbcd14b07376472690951bbeb/converter/src/main/java/com/example/iib_camel/converter/cli/AnalyzeCommand.java#L167
+[src-diagram-names]: https://github.com/ov-petrov/iib-camel/blob/6858b6f6dc5c3f5dbcd14b07376472690951bbeb/converter/src/main/java/com/example/iib_camel/converter/diagram/DiagramNames.java#L15
+[src-flow-parser]: https://github.com/ov-petrov/iib-camel/blob/6858b6f6dc5c3f5dbcd14b07376472690951bbeb/converter/src/main/java/com/example/iib_camel/converter/msgflow/MsgFlowParser.java#L27
+[src-convert-exit]: https://github.com/ov-petrov/iib-camel/blob/6858b6f6dc5c3f5dbcd14b07376472690951bbeb/converter/src/main/java/com/example/iib_camel/converter/cli/ConvertCommand.java#L201

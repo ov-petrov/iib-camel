@@ -43,10 +43,10 @@ on coordination).
 > live as renderer-internal details (`converter.diagram`). If the contract diverges, adjust this document
 > and coordinate with the IR owner — no silent changes.
 
-Package `com.example.iib_camel.converter.ir` (later extended with ESQL/schema types):
+Package `ru.petrovov.iib_camel.converter.ir` (later extended with ESQL/schema types):
 
 ```java
-package com.example.iib_camel.converter.ir;
+package ru.petrovov.iib_camel.converter.ir;
 
 /** A message flow or subflow after parsing a .msgflow/.subflow file. */
 public interface MsgFlow {

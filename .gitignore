@@ -44,3 +44,9 @@ bin/
 /.continue/
 /.idea/
 testing-1/
+/input/
+/output/
+.env
+.env.*
+!.env.example
+*.log

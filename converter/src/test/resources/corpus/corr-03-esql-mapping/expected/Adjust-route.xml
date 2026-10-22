@@ -3,7 +3,7 @@
   <!-- source: узел Input (MQInput) -->
   <route id="Adjust">
     <from uri="jms:ADJUST.IN"/>
-    <bean beanType="com.example.iib_camel.runtime.compute.MessageSnapshots" method="capture"/>
+    <bean beanType="ru.petrovov.iib_camel.runtime.compute.MessageSnapshots" method="capture"/>
     <doTry>
       <!-- source: узел Adjust (Compute) -->
       <to uri="bean:adjustCompute1"/>
@@ -11,12 +11,12 @@
       <to uri="jms:ADJUST.OUT"/>
       <doCatch>
         <exception>java.lang.Exception</exception>
-        <bean beanType="com.example.iib_camel.runtime.compute.MessageSnapshots" method="restore"/>
+        <bean beanType="ru.petrovov.iib_camel.runtime.compute.MessageSnapshots" method="restore"/>
         <!-- source: узел ErrorQueue (MQOutput) -->
         <to uri="jms:ADJUST.ERROR.Q"/>
       </doCatch>
       <doFinally>
-        <bean beanType="com.example.iib_camel.runtime.compute.MessageSnapshots" method="release"/>
+        <bean beanType="ru.petrovov.iib_camel.runtime.compute.MessageSnapshots" method="release"/>
       </doFinally>
     </doTry>
   </route>

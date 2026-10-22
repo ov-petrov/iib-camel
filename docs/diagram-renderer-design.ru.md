@@ -42,10 +42,10 @@ IBM). Речь о структурной диаграмме: узлы, типы,
 > живут как внутренние детали рендера (`converter.diagram`). При расхождении контракта —
 > правим здесь и согласуем с владельцем IR, не молча.
 
-Пакет `com.example.iib_camel.converter.ir` (расширяемый позже ESQL/схемными типами). Эскиз:
+Пакет `ru.petrovov.iib_camel.converter.ir` (расширяемый позже ESQL/схемными типами). Эскиз:
 
 ```java
-package com.example.iib_camel.converter.ir;
+package ru.petrovov.iib_camel.converter.ir;
 
 /** Поток или подпоток после разбора .msgflow/.subflow. */
 public interface MsgFlow {

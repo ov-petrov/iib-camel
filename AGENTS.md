@@ -5,4 +5,5 @@
 - When changing code, remove redundant comments. Keep only short comments explaining important constraints, non-obvious decisions, and critical behavior. Preserve useful source references and actionable migration TODOs.
 - Follow the priorities in `docs/project-analysis-2026-10-22.ru.md`; record implementation progress separately so the original analysis remains a dated baseline.
 - Stack: Java 25, Maven, Spring Boot, Apache Camel XML DSL. Run Maven with JDK 25. Use `mvn verify` for the combined converter/runtime checks.
+- Java packages and generated sources use `ru.petrovov.iib_camel`; Maven groupId is `ru.petrovov.iib_camel`.
 - Verify conversion changes against freshly generated artifacts and behavior, not only saved golden files.

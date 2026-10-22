@@ -3,26 +3,13 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <parent>
-        <groupId>ru.petrov-ov.tools</groupId>
+        <groupId>ru.petrovov.iib_camel</groupId>
         <artifactId>iib-camel</artifactId>
         <version>0.0.1-SNAPSHOT</version>
     </parent>
     <artifactId>iib-camel-converter</artifactId>
     <name>iib-camel-converter</name>
-    <description>One-shot CLI application: converts IIB artifacts (msgflow, subflow, esql) into Apache Camel XML DSL, MapStruct mappers and Mermaid diagrams</description>
-    <url/>
-    <licenses>
-        <license/>
-    </licenses>
-    <developers>
-        <developer/>
-    </developers>
-    <scm>
-        <connection/>
-        <developerConnection/>
-        <tag/>
-        <url/>
-    </scm>
+    <description>CLI for IIB flow analysis, bounded ESQL translation and Apache Camel XML generation</description>
 
     <dependencies>
         <dependency>
@@ -39,10 +26,20 @@
 
     <build>
         <finalName>converter</finalName>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+            </resource>
+            <resource>
+                <directory>${project.basedir}/..</directory>
+                <targetPath>META-INF</targetPath>
+                <includes>
+                    <include>LICENSE</include>
+                    <include>NOTICE</include>
+                </includes>
+            </resource>
+        </resources>
         <plugins>
-            <!-- Самодостаточный (fat-)jar: зависимости включаются внутрь, имя всегда converter.jar.
-                 Инструкция: java -jar converter.jar работает из любого каталога,
-                 без сопровождающего каталога lib/ (FR-7.1: one-shot CLI для заказчика). -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-assembly-plugin</artifactId>
@@ -53,7 +50,7 @@
                     </descriptorRefs>
                     <archive>
                         <manifest>
-                            <mainClass>com.example.iib_camel.converter.ConverterApplication</mainClass>
+                            <mainClass>ru.petrovov.iib_camel.converter.ConverterApplication</mainClass>
                         </manifest>
                     </archive>
                     <appendAssemblyId>false</appendAssemblyId>

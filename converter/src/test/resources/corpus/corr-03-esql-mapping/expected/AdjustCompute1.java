@@ -1,8 +1,8 @@
-package com.example.iib_camel.runtime.generated;
+package ru.petrovov.iib_camel.runtime.generated;
 
 // Источник: esql://routine/adjust#Adjust_Compute1.Main
 
-import com.example.iib_camel.runtime.compute.AbstractComputeBean;
+import ru.petrovov.iib_camel.runtime.compute.AbstractComputeBean;
 import org.apache.camel.Exchange;
 import org.springframework.stereotype.Component;
 

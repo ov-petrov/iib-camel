@@ -3,7 +3,7 @@
   <!-- source: узел Input (MQInput) -->
   <route id="Order">
     <from uri="jms:ORDERS.IN"/>
-    <bean beanType="com.example.iib_camel.runtime.compute.MessageSnapshots" method="capture"/>
+    <bean beanType="ru.petrovov.iib_camel.runtime.compute.MessageSnapshots" method="capture"/>
     <doTry>
       <removeProperty name="iib_complete_436865636b2e737562666c6f77"/>
       <!-- source: узел CheckRef (Subflow) -->
@@ -16,12 +16,12 @@
       <removeProperty name="iib_complete_436865636b2e737562666c6f77"/>
       <doCatch>
         <exception>java.lang.Exception</exception>
-        <bean beanType="com.example.iib_camel.runtime.compute.MessageSnapshots" method="restore"/>
+        <bean beanType="ru.petrovov.iib_camel.runtime.compute.MessageSnapshots" method="restore"/>
         <!-- source: узел Rejected (MQOutput) -->
         <to uri="jms:ORDERS.ERROR.Q"/>
       </doCatch>
       <doFinally>
-        <bean beanType="com.example.iib_camel.runtime.compute.MessageSnapshots" method="release"/>
+        <bean beanType="ru.petrovov.iib_camel.runtime.compute.MessageSnapshots" method="release"/>
       </doFinally>
     </doTry>
   </route>

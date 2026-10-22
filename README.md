@@ -1,112 +1,62 @@
 # iib-camel
 
-A migration tool for converting IBM Integration Bus (IIB / IBM App Connect Enterprise, ACE) applications
-to a modern Java stack based on **Spring Boot** and **Apache Camel**.
+A prototype for analyzing IBM Integration Bus (IIB) / IBM App Connect Enterprise (ACE) message flows and converting a supported subset to Apache Camel XML routes and Java.
 
-> 🇷🇺 Русская версия: [README.ru.md](README.ru.md)
+> [Русская версия](README.ru.md)
 
-## Purpose
+## What it does
 
-Legacy integration applications on IBM Integration Bus — message flows (`.msgflow`), subflows
-(`.subflow`), ESQL modules (`.esql`), message sets (`.mset`, XSD/DFDL/JSON schemas) — are uploaded to the
-tool as input.
+The `analyze` command reads `.msgflow`, `.subflow`, and `.esql` inputs. It writes flow diagrams and reports, plus an ESQL module inventory when ESQL is present. The `convert` command generates Camel XML routes, Java beans for the supported ESQL subset, and a conversion report.
 
-On the output, the tool produces artifacts ready for a Spring Boot + Apache Camel application:
+The current ESQL profile is deliberately limited: Compute `Main` functions without parameters, `RETURNS BOOLEAN`, supported `SET` operations, and a final `RETURN TRUE`. Unsupported or incomplete ESQL is reported and its generated bean stops before running business operations. The XML route profile handles a tested set of flow nodes, route filters, subflows, and error paths; unsupported or ambiguous graph features are reported. Read [implementation progress](docs/implementation-progress.ru.md) and the [manual analyze walkthrough](examples/analyze/README.ru.md) for details.
 
-- **Apache Camel routes** in XML DSL format;
-- **Java classes** for message transformation;
-- **MapStruct mapper classes** generated from Compute / Mapping / ESQL logic;
-- configuration skeleton (`application.properties` / `application.yml`).
+This is an experimental migration aid, not a complete IIB/ACE parser or a production migration service. It does not currently provide MapStruct generation, message-set/schema parsing, complete ESQL translation, or IBM MQ integration. Generated output must be reviewed and validated against the source application and target environment.
 
-The tool does **not** replace the developer, but removes up to the majority of the routine migration work:
-skeleton routes, node wiring, mapping skeletons and transformation boilerplate are generated automatically,
-the developer then completes and validates the business logic.
+## Build
 
-## How it works
+Requirements: JDK 25 and Maven.
 
-Migration pipeline:
-
-```
- ┌───────────────┐   ┌──────────────┐   ┌───────────────┐   ┌──────────────┐
- │ IIB artifacts │ → │   Parsing    │ → │  Intermediary │ → │  Generation  │
- │ .msgflow      │   │  (XML, ESQL) │   │  model (DOM)  │   │  (routes,    │
- │ .subflow      │   │              │   │               │   │  mappers)    │
- │ .esql         │   └──────────────┘   └───────────────┘   └──────────────┘
- │ message sets  │           │                                        │
- └───────────────┘           │              ┌───────────────┐         │
-                             └── problem ───────────────────────────────────┐
-                               report           │ validation │ ←──── for review
-                                                └───────────────┘
+```sh
+mvn -B verify
 ```
 
-1. **Parsing** — reading and validating IIB project files, building an intermediary model (internal
-   representation of flows and transformations).
-2. **Transformation** — matching IIB nodes to Apache Camel elements (see
-   [functional requirements](docs/functional-requirements.en.md)).
-3. **Generation** — output of Camel XML routes, Java classes, MapStruct mappers, configurations.
-4. **Report** — a migration report: what was converted, which nodes require manual work.
+The build creates the converter JAR at `converter/target/converter.jar`.
 
-## Product components and repository structure
+## CLI examples
 
-The project is a multi-module Maven build with two independent applications:
+Analyze the included demonstration inputs and write Mermaid, AsciiDoc, and Markdown reports:
 
-```
-iib-camel/
-├── pom.xml        ← parent (aggregator): one Maven build for both modules
-├── converter/     ← one-shot CLI: IIB artifacts → Camel XML DSL + Java + MapStruct + report
-└── runtime/       ← Spring Boot service executing the converted Camel routes
+```sh
+java -jar converter/target/converter.jar analyze \
+  --input examples/analyze/system \
+  --output target/manual-analysis \
+  --format all
 ```
 
+Convert the included test corpus to Camel XML and Java output:
+
+```sh
+java -jar converter/target/converter.jar convert \
+  --input converter/src/test/resources/corpus \
+  --output target/converted
 ```
-converter (runs on command, terminates)         runtime (runs 24/7)
-        │                                              ▲
-        ▼                                              │
-   Camel XML routes, Java, MapStruct  ── jar/classpath ┘
-```
 
-- **converter** — a separate one-shot Java application: started by a command, converts the specified
-  artifacts and terminates, leaving no background processes or web services; used by integration
-  engineers and CI/CD.
-- **runtime** — *the service where everything runs after conversion*: Spring Boot + Apache Camel,
-  routes loaded from `runtime/src/main/resources/camel/*.xml` (classpath) or from an external
-  directory, IBM MQ adapters (`camel-jms`), unified error handling, health/metrics.
+Generated artifacts are written to the selected output directory. Review the command report and any unsupported-operation diagnostics before using the results.
 
-## Key capabilities
+## Project layout
 
-- Parsing of `.msgflow`, `.subflow`, `.esql` and message set files;
-- Batch conversion of a whole IIB project or a selected directory;
-- Decomposition of subflows into embedded steps of the target routes;
-- ESQL translation: expressions, predicates, `WHERE` and `SET` clauses;
-- Generation of MapStruct mappers from message transformation logic;
-- Migration report with a list of non-convertible elements and required manual changes;
-- Traceability: generated elements contain references to the source flow and the source node.
-
-Detailed requirements are described in [Functional requirements](docs/functional-requirements.en.md)
-(English), [Функциональные требования](docs/functional-requirements.ru.md) (Russian).
-
-## Technology stack
-
-| Layer            | Technology                                        |
-|------------------|----------------------------------------------------|
-| Language         | Java 25                                            |
-| Build            | Maven (multi-module)                               |
-| converter        | Java 25 CLI (standalone one-shot application)      |
-| runtime          | Spring Boot 4.x + Apache Camel 4.x (XML DSL)       |
-| Message mapping  | MapStruct (generated as a Spring bean)             |
-| Testing          | JUnit 5, golden files, embedded Artemis broker     |
-
-## Project status
-
-The prototype analyzes flows, translates a bounded ESQL subset, and generates Camel XML routes.
-The baseline XML conversion blockers are fixed and checked against freshly generated artifacts.
-Incomplete ESQL beans fail before executing business operations. See
-[implementation progress (RU)](docs/implementation-progress.ru.md) for scope and remaining work.
+- `converter/` — one-shot Java CLI for analysis and conversion.
+- `runtime/` — Spring Boot and Apache Camel runtime used by generated routes and beans.
+- `examples/analyze/` — small illustrative inputs for the `analyze` command.
+- `docs/` — requirements, design notes, migration guidance, and implementation status.
 
 ## Documentation
 
-- [Manual `analyze` walkthrough: fixtures and expected results (RU)](examples/analyze/README.ru.md)
-- [README.ru.md](README.ru.md) — Russian readme
-- [Functional requirements (RU)](docs/functional-requirements.ru.md)
-- [Functional requirements (EN)](docs/functional-requirements.en.md)
-- [Testing strategy (EN)](docs/test-strategy.en.md) & [Testing strategy (RU)](docs/test-strategy.ru.md)
-- [Diagram renderer design (EN)](docs/diagram-renderer-design.en.md) & [Design: diagram renderer (RU)](docs/diagram-renderer-design.ru.md)
+- [Functional requirements](docs/functional-requirements.en.md)
+- [Testing strategy](docs/test-strategy.en.md)
+- [Implementation progress (RU)](docs/implementation-progress.ru.md)
+- [Manual analysis examples (RU)](examples/analyze/README.ru.md)
+
+## License
+
+This project is licensed under the [Apache License, Version 2.0](LICENSE). See [NOTICE](NOTICE) for attribution information.

@@ -295,12 +295,12 @@ camel.main.routes-include-pattern = classpath:camel/*.xml
 ### 6.1. Compute-бины
 
 Конвертер создаёт `beans/<Class>.java` в пакете
-`com.example.iib_camel.runtime.generated`. В базовом примере используются
+`ru.petrovov.iib_camel.runtime.generated`. В базовом примере используются
 сгенерированные `AdapterCompute1` и `CheckCompute1`; ручной POJO-парсер не требуется.
 
 ```bash
-mkdir -p runtime/src/main/java/com/example/iib_camel/runtime/generated
-cp converted/beans/*.java runtime/src/main/java/com/example/iib_camel/runtime/generated/
+mkdir -p runtime/src/main/java/ru/petrovov/iib_camel/runtime/generated
+cp converted/beans/*.java runtime/src/main/java/ru/petrovov/iib_camel/runtime/generated/
 ```
 
 Бины наследуют `AbstractComputeBean`. Единственная точка вызова — `compute(Exchange)`.
@@ -453,7 +453,7 @@ mvn -pl runtime -am test -Dtest=E2eDatasetTest,GeneratedArtifactsTest,GeneratedR
 ## Приложение Б. Ответственность после миграции (обязанности заказчика)
 
 * конвертер покрывает базовый набор узлов (FR-2.2 Must). Для остальных — расширяйте
-  правила генерации в `converter/src/main/java/com/example/iib_camel/converter/camel/RouteGenerator.java`
+  правила генерации в `converter/src/main/java/ru/petrovov/iib_camel/converter/camel/RouteGenerator.java`
   (ветка `walk`/`emitChoice`) — тесты на golden-файлы помогут;
 * по мере добавления новых правил обновляйте golden-файл `expected/<Имя>-route.xml`
   (первое утверждение — фикстур, см. `docs/test-strategy.ru.md`, 3.2);
