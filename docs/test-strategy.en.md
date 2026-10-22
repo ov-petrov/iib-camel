@@ -130,9 +130,11 @@ Goal: execute the generated route **in the real runtime** and verify behavior.
 - messages are sent to the input queue by test components; results are consumed from the output
   queues.
 
-**Declarative dataset (described in `e2e/dataset.yml`):**
+**Declarative dataset (described in `e2e/dataset.yml`, one dataset per corpus directory):**
 
 ```yaml
+queues:                                     # queue catalog of the corpus (run isolation)
+  - ADAPTER.IN
 cases:
   - name: high-status-order-routed-to-priority-queue
     input:
@@ -156,6 +158,10 @@ cases:
 Each case: send the input message → await/read from the expected queue → compare MQMD fields and
 body fields. "Routes where it must" = landing in the right queue with the right modifications and
 **absence** of the message in the wrong queues.
+
+The E2E test is parameterized over corpus directories (`E2eDatasetTest`, corr-01 and corr-02):
+corr-02 additionally verifies the bean generated from ESQL (`CheckCompute1`: JMS property
+`CommentField=CHECKED-BY-SUBFLOW`) and priority preservation through the direct:-inlined subflow.
 
 **Additional level-3 techniques:**
 

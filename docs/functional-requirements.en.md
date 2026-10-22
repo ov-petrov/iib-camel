@@ -151,6 +151,17 @@ The system is used:
   dedicated classes/methods invoked from the route (`bean`, `process`), preserving the "node ↔ method"
   relation.
 
+  Implementation status (2026-10-22): the first automated translation level works. The converter
+  generates Spring beans from Compute modules (FR-3.5 "node ↔ method" scope): `bean id = camelize(module)`,
+  `compute(Exchange)` method, statements carried over with the traceable original (`// SET …`). The
+  FR-3.2 convertible subset: `SET OutputRoot = InputRoot` (pass-through), `SET OutputRoot.MQMD.<F> =
+  '<s>'` (JMS property), `SET OutputRoot.<domain>.<Path> = '<s>'` (XML body tree edit), `CAST('<lit>'
+  AS T)` (literal + type note). Branching `IF/WHILE`, `CALL`, `THROW`, functions other than Main and
+  FILTER modules — honest "partial" status: TODO stubs in the bean with the source statement text and
+  causes in the report (FR-3.3); SET statements inside branches are never emitted as unconditional
+  code. ULM model generation (FR-3.4) is out of scope for this level (body fields are edited
+  dynamically via runtime support).
+
 ### 3.4. MapStruct mapper generation
 
 - **FR-4.1. (Must/Should)** By the logic of Mapping nodes (message transformation flows), the system shall

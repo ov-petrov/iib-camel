@@ -21,8 +21,8 @@ Input(eflow:FCMSource) → Compute «Cross-check order» → Trace «Audit trace
   ввод/вывод подпотока — `eflow:FCMSource` / `eflow:FCMSink`);
 - внутри подпотока Trace-узел намеренно оставлен: конвертер честно помечает его
   «не поддерживается» и создаёт TODO-заглушку (FR-2.7) — это testing-кейс для отчёта;
-- ESQL корректно содержится в `Check_Compute1.esql` и по решению FR-3.2 помечается
-  «требует ручной доработки».
+- ESQL корректно содержится в `Check_Compute1.esql` и **переводится автоматически** (FR-3.2):
+  корень + MQMD-метка — бин сгенерирован, статус «конвертировано».
 
 ## Ожидаемый результат конвертации
 
@@ -39,7 +39,7 @@ Input(eflow:FCMSource) → Compute «Cross-check order» → Trace «Audit trace
 | SourceFlow (Input), SinkFlow (Output) | конвертировано |
 | CheckStep (Compute) | конвертировано → bean:checkCompute1 |
 | TraceNode (Trace) | **не поддерживается** (TODO-заглушка, FR-2.7) |
-| Check_Compute1 (ESQL) | **требует ручной доработки** (FR-3.2) |
+| Check_Compute1 (ESQL) | конвертировано — бин `beans/CheckCompute1.java` (FR-3.2) |
 
 ## Формат файлов
 
@@ -54,6 +54,7 @@ Input(eflow:FCMSource) → Compute «Cross-check order» → Trace «Audit trace
 ## Статус golden
 
 `expected/Order-route.xml` создаётся на первом прогоне конвертера и утверждается
-вручную (см. стратегию тестирования, раздел 3.2). E2e-набора нет намеренно: Trace → log
-(заглушка) не даёт паритета сообщений, поэтому уровня e2e для этой фикстуры не
-предусматривается — достаточно golden-сравнения XML и отчётных статусов.
+вручную (см. стратегию тестирования, раздел 3.2). Добавился и уровень L3: сгенерированный
+бин `CheckCompute1` и маршрут `Order-route.xml` выполняются на встроенном Artemis в runtime
+(`runtime/src/test/resources/e2e/corr-02-subflows/`), см. `E2eDatasetTest` — проверяются
+перенос тела, приоритет и JMS-свойство CommentField.

@@ -280,11 +280,28 @@ camel.main.routes-include-pattern = classpath:camel/*.xml
 символ `-` не образует «двойного» расширения, и стандартный XML-лоадер
 подбирается автоматически, без дополнительной регистрации.
 
-### 6.1. Реализация Compute-бинoв (аналог ESQL-модулей, FR-3.1/FR-3.4)
+### 6.1. Реализация Compute-бинoв (аналог ESQL-модулей, FR-3.1/FR-3.5)
 
 Маршрут ссылается на бин `adapterCompute1` (имя camelize-ится из
 `esql://routine/adapter#Adapter_Compute1.Main` → `adapterCompute1`).
-Реализуйте его как `@Component` с тем же именем — по шаблону
+
+**С 2026-10 бины генерируются конвертером** (FR-3.2): после `convert` ищите их в
+`<output>/beans/<Class>.java` (пакет `com.example.iib_camel.runtime.generated`). Скопируйте
+сгенерированный файл в `runtime/src/main/java/com/example/iib_camel/runtime/generated/`:
+
+```bash
+cp converted/beans/CheckCompute1.java \
+   runtime/src/main/java/com/example/iib_camel/runtime/generated/
+```
+
+Бин зависит от `EsqlRuntimeSupport` (runtime, уже в наличии): `esql.copy` — перенос тела,
+`esql.mqmd` — MQMD-поле как JMS-свойство, `esql.setBodyField` — правка XML-дерева.
+Проверьте статус модуля в отчёте: `конвертировано` — бин готов к использованию без правок
+(пример corr-02: `Check_Compute1`); `частично` — внутри метода останутся
+`// TODO (FR-3.3)`-заглушки, доработайте ветвления вручную (пример corr-03: `Adjust_Compute1`);
+`требует ручной доработки` — бин не сгенерирован, пишите его сами.
+
+Для модулей вне переводимого подмножества реализуйте бин вручную — по шаблону
 `runtime/src/main/java/com/example/iib_camel/runtime/compute/AdapterCompute1.java`:
 
 ```java
