@@ -1,6 +1,7 @@
 package com.example.iib_camel.converter.cli;
 
 import com.example.iib_camel.converter.camel.RouteGenerator;
+import com.example.iib_camel.converter.diagram.DiagramNames;
 import com.example.iib_camel.converter.esql.EsqlAssignment;
 import com.example.iib_camel.converter.esql.EsqlModule;
 import com.example.iib_camel.converter.esql.EsqlParser;
@@ -57,6 +58,7 @@ public final class ConvertCommand implements Callable<Integer> {
     private final List<UnitRow> nodes = new ArrayList<>();
     private final List<EsqlUnit> esqlUnits = new ArrayList<>();
     private int convertedFiles;
+    private int subflowFiles;
 
     /** Единица «узел msgflow» для отчёта (FR-5.1/5.2). */
     record UnitRow(String flowName, String nodeId, String kind, UnitStatus status, String note) {
@@ -73,6 +75,7 @@ public final class ConvertCommand implements Callable<Integer> {
     @Override
     public Integer call() {
         List<Path> flows = collect(".msgflow");
+        List<Path> subflows = collect(".subflow");
         List<Path> esqlFiles = collect(".esql");
         if (flows.isEmpty()) {
             System.err.println("Ошибка: .msgflow-файлы не найдены в " + input);
@@ -85,10 +88,24 @@ public final class ConvertCommand implements Callable<Integer> {
             return 3;
         }
 
+        // Реестр подпотоков (FR-2.2): ссылка в .msgflow резолвится по имени из nsURI
+        // ("Check" для Check.subflow; брокер-схема отбрасывается в генераторе).
+        Map<String, MsgFlow> subflowRegistry = new LinkedHashMap<>();
+        for (Path file : subflows) {
+            try {
+                MsgFlow sub = new MsgFlowParser().parse(Files.newInputStream(file));
+                subflowRegistry.put(sub.name(), sub);
+                subflowRegistry.put(DiagramNames.of(sub.name(), stemOf(file)), sub);
+            } catch (Exception e) {
+                errors.add(file + ": " + e.getMessage());
+            }
+        }
+        subflowFiles = distinctSubflows(subflowRegistry).size();
+
         for (Path file : flows) {
             try {
                 MsgFlow flow = new MsgFlowParser().parse(Files.newInputStream(file));
-                RouteResult result = new RouteGenerator(flow).generate();
+                RouteResult result = new RouteGenerator(flow, subflowRegistry).generate();
                 String routeId = flow.name().replaceAll("\\.msgflow$", "");
                 Path routeFile = output.resolve(routeId + "-route.xml");
                 Files.writeString(routeFile, result.xml(), StandardCharsets.UTF_8);
@@ -98,6 +115,16 @@ public final class ConvertCommand implements Callable<Integer> {
                 }
             } catch (Exception e) {
                 errors.add(file + ": " + e.getMessage());
+            }
+        }
+
+        // Юниты-подпотоки: диагнозы при разворачивании — обход от Input-узлов
+        // (eflow:FCMSource); отдельного route-файла не создаётся — подпоток вызван
+        // через direct: из родительского маршрута (FR-2.2).
+        for (MsgFlow sub : distinctSubflows(subflowRegistry)) {
+            RouteResult result = new RouteGenerator(sub, subflowRegistry).inlineResult();
+            for (Diagnosis d : result.diagnoses()) {
+                nodes.add(new UnitRow(sub.name(), d.nodeId(), d.kind(), d.status(), d.note()));
             }
         }
 
@@ -124,6 +151,23 @@ public final class ConvertCommand implements Callable<Integer> {
             return 3;
         }
         return errors.isEmpty() ? 0 : 2;
+    }
+
+    /** Реестр содержит два ключа на файл (полное имя и короткое) — уникализуем по порядку вставки. */
+    private static List<MsgFlow> distinctSubflows(Map<String, MsgFlow> registry) {
+        List<MsgFlow> unique = new ArrayList<>();
+        for (MsgFlow sub : registry.values()) {
+            if (unique.stream().noneMatch(s -> s == sub || s.name().equals(sub.name()))) {
+                unique.add(sub);
+            }
+        }
+        return unique;
+    }
+
+    private static String stemOf(Path file) {
+        String name = file.getFileName() == null ? "flow" : file.getFileName().toString();
+        int dot = name.lastIndexOf('.');
+        return dot <= 0 ? name : name.substring(0, dot);
     }
 
     /** Формирует migration-report.md: полный отчёт FR-5.1 со статами FR-5.2/5.3. */
@@ -173,6 +217,11 @@ public final class ConvertCommand implements Callable<Integer> {
         report.append("## Потоки\n\n| Поток | Результат | Узлов | Конв. | Част. | Руч. | Не под. |\n|---|---|---|---|---|---|---|\n");
         List<String> flowNames = nodes.stream().map(UnitRow::flowName).distinct().toList();
         for (String name : flowNames) {
+            // маршрут есть только у .msgflow; подпотоки вызываются direct: из родительского
+            boolean isSubflow = name.endsWith(".subflow");
+            String link = isSubflow
+                    ? "direct: (вызов из родительского маршрута)"
+                    : "[`" + name.replace(".msgflow", "") + "-route.xml`](" + name.replace(".msgflow", "") + "-route.xml)";
             Map<UnitStatus, Long> by = new LinkedHashMap<>();
             long nodeTotal = 0;
             for (UnitStatus status : UnitStatus.values()) {
@@ -185,8 +234,7 @@ public final class ConvertCommand implements Callable<Integer> {
                 }
             }
             report.append("| ").append(name)
-                    .append(" | [`").append(name.replace(".msgflow", "")).append("-route.xml`](")
-                    .append(name.replace(".msgflow", "")).append("-route.xml) | ")
+                    .append(" | ").append(link).append(" | ")
                     .append(nodeTotal).append(" | ")
                     .append(by.get(UnitStatus.CONVERTED)).append(" | ")
                     .append(by.get(UnitStatus.PARTIAL)).append(" | ")
@@ -265,10 +313,14 @@ public final class ConvertCommand implements Callable<Integer> {
         long partial = counts.getOrDefault(UnitStatus.PARTIAL, 0);
         long converted = counts.getOrDefault(UnitStatus.CONVERTED, 0);
         long attention = manual + unsupported + partial;
+        long msgflowCount = nodes.stream().map(UnitRow::flowName)
+                .filter(n -> n.endsWith(".msgflow")).distinct().count();
         report.append("## Сводка\n\n")
-                .append("- Файлов msgflow: ").append(nodes.stream().map(UnitRow::flowName).distinct().count())
+                .append("- Файлов msgflow: ").append(msgflowCount)
                 .append(" (конвертировано ").append(convertedFiles)
                 .append(", с ошибками разбора ").append(errors.size()).append(")\n")
+                .append("- Подпотоков: ").append(subflowFiles)
+                .append(" (развёрнуты во вложенные маршруты direct:, FR-2.2)\n")
                 .append("- Единиц конвертации: ").append(total)
                 .append(" (конвертировано ").append(converted)
                 .append(", частично ").append(partial)
@@ -285,6 +337,7 @@ public final class ConvertCommand implements Callable<Integer> {
                 + "; узлов конвертировано " + counts.getOrDefault(UnitStatus.CONVERTED, 0)
                 + ", частично " + counts.getOrDefault(UnitStatus.PARTIAL, 0)
                 + ", не поддерживается " + counts.getOrDefault(UnitStatus.NOT_SUPPORTED, 0)
+                + (subflowFiles == 0 ? "" : "; подпотоков " + subflowFiles + " (direct:)")
                 + (esqlCount == 0 ? ""
                   : "; модулей ESQL " + esqlUnits.size() + " (требует ручной доработки)")
                 + "; ошибок " + errors.size());

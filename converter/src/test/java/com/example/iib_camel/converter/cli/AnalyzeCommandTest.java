@@ -211,6 +211,26 @@ class AnalyzeCommandTest {
     }
 
     @Test
+    void mdReportVerdictsPerCorr02FlowAreHonest(@TempDir Path temp) throws Exception {
+        Path input = Path.of("src/test/resources/corpus/corr-02-subflows");
+        Path output = temp.resolve("out");
+
+        assertEquals(0, run("--input", input.toString(), "--output", output.toString(),
+                "--format", "md"));
+
+        // родительский поток: MQInput + Subflow + MQOutput — все в базовом наборе → «да»
+        String parent = Files.readString(output.resolve("Order.md"));
+        assertTrue(parent.contains("Обработка всех узлов IIB предусмотрена конвертером: **да** (4 из 4 узлов)"));
+        assertTrue(parent.contains("| `CheckRef` | Subflow | ссылка на подпоток |"),
+                "узел-ссылка на подпоток категория REFERENCE");
+        // подпоток: Trace вне базового набора → «нет», с путями решения
+        String sub = Files.readString(output.resolve("Check.md"));
+        assertTrue(sub.contains("Обработка всех узлов IIB предусмотрена конвертером: **нет** (3 из 4 узлов)"));
+        assertTrue(sub.contains("| `TraceNode` | Trace | обработка | — | нет (ручная миграция) |"));
+        assertTrue(sub.contains("Типы вне покрытия (**1**): Trace"));
+    }
+
+    @Test
     void mdReportFlagsUnsupportedKindAndNegativeVerdict(@TempDir Path temp) throws Exception {
         String withTrace = SAMPLE_MSGFLOW.replace(
                 "<connections ",

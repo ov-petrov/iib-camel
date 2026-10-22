@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<routes xmlns="http://camel.apache.org/schema/spring">
+  <!-- source: узел Input (MQInput) -->
+  <route id="Order">
+    <from uri="jms:ORDERS.IN"/>
+    <doTry>
+      <!-- source: узел CheckRef (Subflow) -->
+      <to uri="direct:Check"/>
+      <!-- source: узел Acked (MQOutput) -->
+      <to uri="jms:ORDERS.OUT"/>
+      <doCatch>
+        <exception>java.lang.Exception</exception>
+        <!-- source: узел Rejected (MQOutput) -->
+        <to uri="jms:ORDERS.ERROR.Q"/>
+      </doCatch>
+    </doTry>
+  </route>
+  <!-- source: подпоток Check.subflow -->
+  <route id="Check">
+    <from uri="direct:Check"/>
+    <!-- source: узел CheckStep (Compute) -->
+    <to uri="bean:checkCompute1"/>
+    <!-- TODO (FR-2.7): правило конвертации узла "Trace" не определено -->
+    <log message="Unsupported IIB node: Trace"/>
+  </route>
+
+</routes>

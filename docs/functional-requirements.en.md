@@ -94,9 +94,11 @@ The system is used:
   | subflow (`.subflow`) | expansion into an embedded step of the route (`direct`/route inlining or a dedicated `<route>` called via `to`) |
 
   **IIB node catalog coverage (assessment, 2026-10).** The IIB/ACE 12.x palette of built-in nodes
-  contains **~100+ node types** grouped into ~15 category drawers. The converter supports 4 kinds
-  so far (`MQInput`, `MQOutput`, `Compute`, `Route` + catch/fail terminal semantics) — formally ~4%
-  of the catalog. Breakdown by category and expansion priorities (FR-2.2 Should):
+  contains **~100+ node types** grouped into ~15 category drawers. The converter supports the base
+  kinds (`MQInput`, `MQOutput`, `Compute`, `Route` + catch/fail terminal semantics) and subflows
+  (`.subflow` → `direct:` call + nested route; subflow Input/Output nodes — the
+  `eflow:FCMSource`/`eflow:FCMSink` terminals) — formally ~7% of the catalog. Breakdown by
+  category and expansion priorities (FR-2.2 Should):
 
   | IBM category | Example nodes | Status | Expansion candidates (Should) |
   |---|---|---|---|

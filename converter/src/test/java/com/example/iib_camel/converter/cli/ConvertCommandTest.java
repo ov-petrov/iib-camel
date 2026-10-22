@@ -64,6 +64,33 @@ class ConvertCommandTest {
     }
 
     @Test
+    void convertsCorr02SubflowFixtureWithHonestStatuses() throws Exception {
+        Path input = copyFixture().resolve("corr-02-subflows");
+        Path output = tempDir.resolve("out-corr02");
+
+        int exit = run(input, output);
+
+        assertEquals(0, exit, "подпоток найден во входном наборе → код 0");
+        String golden = Files.readString(
+                Path.of("src/test/resources/corpus/corr-02-subflows/expected/Order-route.xml"),
+                StandardCharsets.UTF_8);
+        assertEquals(golden, Files.readString(output.resolve("Order-route.xml")),
+                "маршрут побайтово равен golden-файлу (родитель + вложенный direct-маршрут)");
+
+        String report = Files.readString(output.resolve("migration-report.md"), StandardCharsets.UTF_8);
+        // юниты подпотока — отдельная секция с именем файла подпотока
+        assertTrue(report.contains("### Check.subflow"));
+        assertTrue(report.contains("| CheckRef | Subflow | конвертировано | подпоток \"Check.subflow\""),
+                "узел-ссылка получает статус «конвертировано» (direct-развёртывание)");
+        assertTrue(report.contains("| TraceNode | Trace | не поддерживается |"),
+                "Trace внутри подпотока честно помечен (FR-2.7, FR-5.2)");
+        // таблица потоков: подпоток без ссылки на route-файл (вызывается direct:)
+        assertTrue(report.contains("| Check.subflow | direct: (вызов из родительского маршрута) |"));
+        assertTrue(report.contains("- Подпотоков: 1 (развёрнуты во вложенные маршруты direct:, FR-2.2)"));
+        assertTrue(report.contains("Check_Compute1.esql"), "ESQL подпотока в отчёте");
+    }
+
+    @Test
     void bareRunUsesDefaultInputAndOutputDirectories() throws Exception {
         Path input = Path.of("input");
         Path output = Path.of("output");

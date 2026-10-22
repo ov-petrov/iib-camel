@@ -67,10 +67,16 @@ public final class MsgFlowParser {
             throw new IllegalArgumentException("узел без xmi:type (id=" + el.getAttribute("xmi:id") + ")");
         }
         String id = requireAttr(el, "xmi:id");
+        String kind = nodeKind(xmiType);
         Map<String, String> properties = new LinkedHashMap<>();
         var attrs = el.getAttributes();
         for (int i = 0; i < attrs.getLength(); i++) {
             attr(properties, attrs.item(i));
+        }
+        // узел-ссылка на подпоток: цель берём из xmi:type (канон ACE: "<Имя>.subflow:FCMComposite_1") —
+        // реальные .msgflow не хранят имя файла подпотока в отдельном атрибуте узла (A4)
+        if ("Subflow".equals(kind)) {
+            properties.put("subflowName", subflowTarget(xmiType));
         }
 
         List<String> dynamicTerminals = new ArrayList<>();
@@ -97,7 +103,7 @@ public final class MsgFlowParser {
         if (label == null) {
             label = el.getAttribute("xmi:id");
         }
-        return new FlowNode(id, nodeKind(xmiType), label, properties, dynamicTerminals);
+        return new FlowNode(id, kind, label, properties, dynamicTerminals);
     }
 
     private void attr(Map<String, String> properties, Node attr) {
@@ -133,15 +139,45 @@ public final class MsgFlowParser {
         return value;
     }
 
+    /**
+     * Канон типов узлов — ot4i/ace-bob, skills/shared/node-types.md:
+     * ComIbm*.msgnode — built-in узлы; "&lt;Имя&gt;.subflow:FCMComposite_1" — узел-ссылка
+     * на подпоток (брокер-схема, если есть, присоединена подчёркиванием: "Схема_Имя.subflow");
+     * eflow:FCMSource — Input-узел подпотока (терминал In узла-ссылки);
+     * eflow:FCMSink — Output-узел подпотока (терминал Out).
+     */
     static String nodeKind(String xmiType) {
-        String prefix = xmiType.substring(0, xmiType.indexOf(':'));
+        int colon = xmiType.indexOf(':');
+        String prefix = colon < 0 ? xmiType : xmiType.substring(0, colon);
+        if (prefix.endsWith(".subflow")) {
+            return "Subflow";
+        }
+        if (prefix.equals("eflow")) {
+            String local = xmiType.substring(colon + 1);
+            return switch (local) {
+                case "FCMSource" -> "Input";
+                case "FCMSink" -> "Output";
+                default -> xmiType; // прочие служебные eflow-типы: как есть, диагностика справится
+            };
+        }
         if (prefix.endsWith(".msgnode")) {
             String body = prefix.substring(0, prefix.length() - ".msgnode".length());
             return body.startsWith("ComIbm") ? body.substring("ComIbm".length()) : body;
         }
-        if (prefix.endsWith(".subflow")) {
-            return "Subflow";
-        }
         return prefix;
+    }
+
+    /**
+     * Имя файла подпотока из канонического xmi:type узла-ссылки:
+     * "Check.subflow:FCMComposite_1" → "Check"; "Schema_Check.subflow:FCMComposite_1" →
+     * "Schema_Check" (брокер-схема сохраняется — резолвер сопоставит по полному имени,
+     * см. RouteGenerator: ключи реестра подпотоков включают и полное, и короткое имя).
+     */
+    static String subflowTarget(String xmiType) {
+        int colon = xmiType.indexOf(':');
+        String prefix = colon < 0 ? xmiType : xmiType.substring(0, colon);
+        return prefix.endsWith(".subflow")
+                ? prefix.substring(0, prefix.length() - ".subflow".length())
+                : prefix;
     }
 }

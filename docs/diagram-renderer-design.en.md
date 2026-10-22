@@ -223,7 +223,7 @@ with facts from real files so that only affected parts change:
 | A1 | Root element is a flow element (`flow`-family); namespaces vary across MB/IIB/ACE versions | inspect the root and ns URI of real files; parser is namespace-agnostic — low risk | low |
 | A2 | Nodes live in a dedicated container (`nodes`-family); node type comes from the element name or a `type` attribute | container structure in a real file | medium |
 | A3 | Connections are a flat list of elements under `connections` with source/target terminal attributes | exact terminal attribute names | medium |
-| A4 | A subflow lives in its own file; the parent references it via a node pointing to the `.subflow` | `.subflow` file format, reference node shape | medium |
+| A4 | A subflow lives in its own file; the parent references it via a node pointing to the `.subflow` | `.subflow` file format, reference node shape | **resolved (corr-02)**: reference node is `xmi:type="Name.subflow:FCMComposite_1"` (+ xmlns declaration), input/output are `eflow:FCMSource`/`eflow:FCMSink` (canon: `ot4i/ace-bob`) |
 | A5 | Node properties are sub-elements/attributes (queue for INPUT, MQ host, ESQL module); which of them are actually populated | see which properties are worth rendering under labels | low |
 | A6 | The file carries Toolkit layout coordinates (node positions) | verify that ignoring them is safe | low |
 | A7 | Version differences (MB9 / IIB10 / ACE11+) — ns URIs and minor fields; UTF-8 encoding (BOM possible) | compare files of different versions if available | low |

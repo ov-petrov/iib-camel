@@ -36,8 +36,8 @@ converter/src/test/resources/corpus/
 │   │   └── e2e/
 │   │       ├── dataset.yml          # входные сообщения + ожидаемые очереди/поля
 │   │       └── messages/*.xml       # тестовые входные сообщения
-├── corr-02-esql-mapping/            # ESQL-функции, CAST, IF/CASE (L2) — Should
-├── corr-03-subflows/                # подпотоки, direct/inline (L2) — Should
+├── corr-02-subflows/                # подпотоки, direct/inline + честные статусы (L2) — Should
+├── corr-03-esql-mapping/            # ESQL-функции, CAST, IF/CASE (L2) — Should
 └── corr-04-exotic/                  # редкие узлы/конструкции (L3) — Could
 ```
 

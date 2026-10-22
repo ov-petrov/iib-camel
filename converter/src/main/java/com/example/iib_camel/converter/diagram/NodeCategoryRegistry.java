@@ -12,7 +12,8 @@ import java.util.Objects;
  *
  * Ключ — kind из IR: каноническое имя типа узла без префикса ComIbm и суффикса .msgnode
  * (например MQInput, Compute, Subflow), сравнение без учёта регистра.
- * Неизвестный тип отображается категорией OTHER, ссылки на подпотоки — REFERENCE;
+ * Input/Output — терминальные узлы подпотока (eflow:FCMSource / eflow:FCMSink);
+ * неизвестный тип отображается категорией OTHER, ссылки на подпотоки — REFERENCE;
  * реестр пополняется по мере появления реальных файлов (допущение A8).
  */
 public final class NodeCategoryRegistry {
@@ -25,11 +26,11 @@ public final class NodeCategoryRegistry {
     public static NodeCategoryRegistry withIibDefaults() {
         NodeCategoryRegistry registry = new NodeCategoryRegistry();
         for (String kind : List.of("MQInput", "HTTPInput", "JMSInput", "FileInput",
-                                   "SOAPInput", "TCPInput", "MQGet")) {
+                                   "SOAPInput", "TCPInput", "MQGet", "Input")) {
             registry.register(kind, NodeCategory.INPUT);
         }
         for (String kind : List.of("MQOutput", "HTTPReply", "JMSOutput", "FileOutput",
-                                   "SOAPReply", "TCPOutput", "MQReply")) {
+                                   "SOAPReply", "TCPOutput", "MQReply", "Output")) {
             registry.register(kind, NodeCategory.OUTPUT);
         }
         for (String kind : List.of("Filter", "Route", "RouteToLabel", "Label", "Router")) {

@@ -30,6 +30,22 @@ class RouteGeneratorTest {
         }
     }
 
+    /** corr-02: родительский поток со ссылкой на подпоток и реестром из Check.subflow. */
+    private RouteGenerator orderGenerator() {
+        var parser = new MsgFlowParser();
+        MsgFlow order = load("/corpus/corr-02-subflows/Order.msgflow");
+        MsgFlow check = load("/corpus/corr-02-subflows/Check.subflow");
+        return new RouteGenerator(order, Map.of("Check", check, "Check.subflow", check));
+    }
+
+    private static MsgFlow load(String resource) {
+        try (var in = RouteGeneratorTest.class.getResourceAsStream(resource)) {
+            return new MsgFlowParser().parse(in);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     @Test
     void generatesRouteSkeleton() {
         String xml = new RouteGenerator(adapterFlow()).generate().xml();
@@ -106,5 +122,67 @@ class RouteGeneratorTest {
                         .filter(d -> d.nodeId().equals("Out"))
                         .allMatch(d -> d.note().contains("нет входного узла MQInput")),
                 "примечание объясняет отсутствие маршрута");
+    }
+
+    @Test
+    void corr02MatchesGoldenFile() throws Exception {
+        try (var golden = getClass().getResourceAsStream(
+                "/corpus/corr-02-subflows/expected/Order-route.xml")) {
+            String expected = new String(golden.readAllBytes(), StandardCharsets.UTF_8);
+            assertEquals(expected, orderGenerator().generate().xml());
+        }
+    }
+
+    @Test
+    void subflowReferenceIsInlinedAsDirectRoute() {
+        var result = orderGenerator().generate();
+
+        assertEquals(UnitStatus.CONVERTED, result.statusOf("CheckRef"),
+                "подпоток с найденным reference-файлом → конвертировано");
+        assertTrue(result.xml().contains("<to uri=\"direct:Check\"/>"),
+                "вызов подпотока — direct: (FR-2.2)");
+        assertTrue(result.xml().contains("<route id=\"Check\">"));
+        assertTrue(result.xml().contains("<from uri=\"direct:Check\"/>"));
+        assertTrue(result.xml().contains("<to uri=\"bean:checkCompute1\"/>"),
+                "содержимое подпотока развёрнуто во вложенный маршрут");
+        assertTrue(result.xml().contains("Unsupported IIB node: Trace"),
+                "Trace внутри подпотока — честная заглушка FR-2.7");
+        // родительская цепочка после подпотока продолжается (out от узла-ссылки)
+        assertTrue(result.xml().contains("<to uri=\"jms:ORDERS.OUT\"/>"));
+        assertEquals(UnitStatus.CONVERTED, result.statusOf("Acked"));
+    }
+
+    @Test
+    void unresolvedSubflowReferenceBecomesStub() {
+        var parser = new MsgFlowParser();
+        MsgFlow order = load("/corpus/corr-02-subflows/Order.msgflow");
+        var result = new RouteGenerator(order, Map.of()).generate();
+
+        assertEquals(UnitStatus.NOT_SUPPORTED, result.statusOf("CheckRef"),
+                "подпоток не найден → честный статус «не поддерживается»");
+        assertTrue(result.diagnoses().stream()
+                        .filter(d -> d.nodeId().equals("CheckRef"))
+                        .allMatch(d -> d.note().contains("не найден во входном наборе")),
+                "примечание называет причину: reference-файл отсутствует");
+        assertTrue(result.xml().contains("Unsupported IIB node: Subflow"),
+                "заглушка вместо разворачивания");
+    }
+
+    @Test
+    void inlineResultDiagnosesSubflowUnitsHonesty() {
+        var parser = new MsgFlowParser();
+        MsgFlow check = load("/corpus/corr-02-subflows/Check.subflow");
+        MsgFlow order = load("/corpus/corr-02-subflows/Order.msgflow");
+        var registry = Map.of("Check", check, "Check.subflow", check);
+        var result = new RouteGenerator(check, registry).inlineResult();
+
+        assertEquals(UnitStatus.CONVERTED, result.statusOf("SourceFlow"),
+                "вход подпотока (eflow:FCMSource) → конвертировано");
+        assertEquals(UnitStatus.CONVERTED, result.statusOf("CheckStep"));
+        assertEquals(UnitStatus.NOT_SUPPORTED, result.statusOf("TraceNode"),
+                "Trace-узел внутри подпотока честно помечен (FR-2.7)");
+        assertEquals(UnitStatus.CONVERTED, result.statusOf("SinkFlow"),
+                "выход подпотока (eflow:FCMSink) → конвертировано");
+        // родительский поток с empty-диагностикой не участвует: диапазон только по Check.subflow
     }
 }

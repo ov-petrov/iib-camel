@@ -20,25 +20,44 @@ import java.util.Set;
  *
  * Базовые правила (FR-2.2, Must): MQInput → from(jms:…), Compute → bean,
  * Route → choice/when/otherwise (filterPattern → simple), MQOutput → to(jms:…);
- * catch/fail → doCatch (FR-2.3). Неизвестные узлы не отбрасываются, а создают
- * TODO-заглушки (FR-2.7). Каждый шаг несёт комментарий-источник (FR-2.6).
+ * подпоток (.subflow) → вызов `<to uri="direct:Имя"/>` + вложенный `<route>` с
+ * развёрнутым содержимым подпотока; catch/fail → doCatch (FR-2.3). Неизвестные узлы
+ * не отбрасываются, а создают TODO-заглушки (FR-2.7). Каждый шаг несёт
+ * комментарий-источник (FR-2.6).
  *
  * Вместе с XML собирает диагнозы по каждому узлу (FR-5.1/5.2): статус единицы
  * конвертации (конвертировано / частично / не поддерживается) + примечание
- * с целью «элемент Camel». Узлы, не посещённые при обходе (нет пути от MQInput),
- * получают честный статус «частично» — конвертер не молчит о пропущенных узлах.
+ * с целью «элемент Camel». Узлы, не посещённые при обходе, получают честный
+ * статус «частично»/«не поддерживается» — конвертер не молчит о пропущенных узлах.
+ *
+ * Подпотоки (FR-2.2): конструктор принимает реестр разобранных .subflow (ключ — имя
+ * из nsURI без расширения и полное имя с расширением). Узел-ссылка Subflow разворачивается
+ * во вложенный `<route id="Имя">` (from direct:Имя); диагнозы узлов ВНУТРИ подпотока
+ * в итог родительского потока не входят — их собирает {@link #inlineResult()}, который
+ * CLI вызывает для каждого .subflow отдельно (юнит отчёта — сам файл подпотока).
+ * Неразрешённая ссылка → заглушка NOT_SUPPORTED (FR-2.7), продолжение обхода по out.
  */
 public final class RouteGenerator {
 
     private static final String CAMEL_NS = "http://camel.apache.org/schema/spring";
-    /** Базовый набор узлов (FR-2.2, Must) — используется генератором и отчётом FR-5.1. */
+    /** Базовый набор узлов (FR-2.2, Must/Should) — используется генератором и отчётом FR-5.1. */
     public static final Set<String> SUPPORTED_BASE_KINDS =
-            Set.of("MQInput", "MQOutput", "Compute", "Route");
+            Set.of("MQInput", "MQOutput", "Compute", "Route", "Subflow", "Input", "Output");
+
+    /** Лимит вложенности подпотоков — защита от циклических ссылок (заглушка вместо зависания). */
+    private static final int MAX_SUBFLOW_DEPTH = 16;
 
     private final MsgFlow flow;
+    private final Map<String, MsgFlow> subflows;
 
     public RouteGenerator(MsgFlow flow) {
+        this(flow, Map.of());
+    }
+
+    /** Реестр подпотоков: ключи — имя из nsURI (без .subflow) и полное имя файла. */
+    public RouteGenerator(MsgFlow flow, Map<String, MsgFlow> subflows) {
         this.flow = flow;
+        this.subflows = subflows;
     }
 
     /** XML + полный перечень диагнозов всех узлов потока (для отчёта FR-5.1). */
@@ -49,90 +68,214 @@ public final class RouteGenerator {
 
         List<Diagnosis> raw = new ArrayList<>();
         Set<String> visited = new LinkedHashSet<>();
+        Set<String> referenced = new LinkedHashSet<>(); // ключи подпотоков в порядке встречи
         boolean anyInput = false;
         for (FlowNode input : flow.nodes()) {
             if ("MQInput".equals(input.kind())) {
                 anyInput = true;
                 visited.add(input.id());
                 diagnoseInput(input, raw);
-                emitRoute(input, out, raw, visited);
+                emitRoute(input, out, raw, visited, referenced, 0);
             }
         }
-        raw.addAll(orphanDiagnoses(visited, anyInput));
+        for (String key : referenced) {
+            out.append(inlineRouteXml(subflows.get(key)));
+        }
+        if (!referenced.isEmpty()) {
+            out.append("\n"); // читаемость: вложенные подпотоки отделены от родительских маршрутов
+        }
+        raw.addAll(orphanDiagnoses(flow, visited, anyInput,
+                "нет пути от входного узла MQInput — узел не попал в маршрут",
+                "в потоке нет входного узла MQInput — маршрут не сгенерирован"));
         out.append("</routes>\n");
         return new RouteResult(out.toString(), canonical(raw));
     }
 
-    private void emitRoute(FlowNode input, StringBuilder out,
-                           List<Diagnosis> raw, Set<String> visited) {
+    /**
+     * Диагнозы юнита-подпотока для отчёта FR-5.1: обход от Input-узлов (eflow:FCMSource)
+     * без построения XML (в родительском маршруте подпоток уже вызван через direct:).
+     * Не достигнутые узлы получают честный статус с причиной.
+     */
+    public RouteResult inlineResult() {
+        var throwaway = new StringBuilder();
+        List<Diagnosis> raw = new ArrayList<>();
+        Set<String> visited = new LinkedHashSet<>();
+        boolean anyEntry = false;
+        for (FlowNode entry : flow.nodes()) {
+            if ("Input".equals(entry.kind())) {
+                anyEntry = true;
+                visited.add(entry.id());
+                raw.add(new Diagnosis(entry.id(), entry.kind(), UnitStatus.CONVERTED,
+                        "вход подпотока (eflow:FCMSource) → from direct-вызова"));
+                walk(entry, "out", 2, throwaway, raw, visited, referencedUnused(), flow, 0);
+            }
+        }
+        raw.addAll(orphanDiagnoses(flow, visited, anyEntry,
+                "нет пути от Input-узла внутри подпотока — узел не попал в разворачиваемый маршрут",
+                "в подпотоке нет узла Input (eflow:FCMSource) — содержимое не разворачивается"));
+        return new RouteResult("", canonical(raw));
+    }
+
+    /** Реестр-заглушка для рекурсивных вызовов walk, которым не нужно копить ссылки. */
+    private Set<String> referencedUnused() {
+        return new LinkedHashSet<>();
+    }
+
+    private void emitRoute(FlowNode input, StringBuilder out, List<Diagnosis> raw,
+                           Set<String> visited, Set<String> referenced, int depth) {
         out.append(line(1, commentFor(input)))
-           .append(line(1, "<route id=\"" + routeId() + "\">"))
+           .append(line(1, "<route id=\"" + routeId(flow.name()) + "\">"))
            .append(line(2, "<from uri=\"jms:" + queue(input) + "\"/>"))
            .append(line(2, "<doTry>"));
 
         StringBuilder steps = new StringBuilder();
-        walk(input, "out", 3, steps, raw, visited);
+        walk(input, "out", 3, steps, raw, visited, referenced, flow, depth);
         out.append(steps).append(catchBranch(input, raw, visited))
            .append(line(2, "</doTry>"))
            .append(line(1, "</route>"));
     }
 
-    /** Обход цепочки по исходящему терминалу. */
+    /**
+     * Обход цепочки по исходящему терминалу. source — поток, содержащий узел
+     * (родительский или подпоток при разворачивании).
+     */
     private void walk(FlowNode node, String terminal, int indent, StringBuilder out,
-                      List<Diagnosis> raw, Set<String> visited) {
-        connection(node.id(), terminal).ifPresent(link -> {
-            FlowNode target = flow.node(link.targetNodeId());
+                      List<Diagnosis> raw, Set<String> visited, Set<String> referenced,
+                      MsgFlow source, int depth) {
+        connection(source, node.id(), terminal).ifPresent(link -> {
+            FlowNode target = source.node(link.targetNodeId());
             visited.add(target.id());
             switch (target.kind()) {
                 case "Compute" -> {
                     diagnoseCompute(target, raw);
                     out.append(step(indent, target, "<to uri=\"bean:" + beanId(target) + "\"/>"));
-                    walk(target, "out", indent, out, raw, visited);
+                    walk(target, "out", indent, out, raw, visited, referenced, source, depth);
                 }
                 case "Route" -> {
                     diagnoseRoute(target, raw);
-                    emitChoice(target, indent, out, raw, visited);
+                    emitChoice(target, indent, out, raw, visited, referenced, source, depth);
                 }
                 case "MQOutput" -> {
                     diagnoseQueue(target, raw);
                     out.append(step(indent, target, "<to uri=\"jms:" + queue(target) + "\"/>"));
                 }
+                case "Input", "Output" -> {
+                    // ввод/вывод подпотока — терминалы узла-ссылки, отдельного кода не создают:
+                    // Input — точка входа разворачиваемого маршрута, Output — точка возврата
+                    raw.add(new Diagnosis(target.id(), target.kind(), UnitStatus.CONVERTED,
+                            target.kind().equals("Input")
+                                    ? "вход подпотока (eflow:FCMSource) → from direct-вызова"
+                                    : "выход подпотока (eflow:FCMSink) → возврат в родительский маршрут"));
+                }
+                case "Subflow" -> {
+                    MsgFlow sub = resolveSubflow(target);
+                    if (sub == null) {
+                        raw.add(new Diagnosis(target.id(), target.kind(), UnitStatus.NOT_SUPPORTED,
+                                "подпоток \"" + target.properties().getOrDefault("subflowName", "")
+                                + "\" не найден во входном наборе — заглушка (FR-1.3, FR-2.7)"));
+                        out.append(unknownNode(indent, target));
+                    } else if (depth >= MAX_SUBFLOW_DEPTH) {
+                        raw.add(new Diagnosis(target.id(), target.kind(), UnitStatus.PARTIAL,
+                                "превышен лимит вложенности подпотоков (" + MAX_SUBFLOW_DEPTH
+                                + "), возможно зацикливание — заглушка"));
+                        out.append(unknownNode(indent, target));
+                    } else {
+                        String key = shortSubflowKey(target);
+                        diagnoseFlowReference(target, sub, key, raw);
+                        out.append(step(indent, target, "<to uri=\"direct:" + key + "\"/>"));
+                        referenced.add(key);
+                        walk(target, "out", indent, out, raw, visited, referenced, source, depth);
+                    }
+                }
                 default -> {
                     raw.add(new Diagnosis(target.id(), target.kind(), UnitStatus.NOT_SUPPORTED,
                             "правило конвертации не определено — создана заглушка (FR-2.7)"));
                     out.append(unknownNode(indent, target));
+                    walk(target, "out", indent, out, raw, visited, referenced, source, depth);
                 }
             }
         });
     }
 
+    /**
+     * Резолюция подпотока: реестр проиндексирован и полным именем (например
+     * "Schema_Check" для ссылки Schema_Check.subflow), и коротким ("Check").
+     */
+    private MsgFlow resolveSubflow(FlowNode reference) {
+        String full = reference.properties().getOrDefault("subflowName", "");
+        if (subflows.containsKey(full)) {
+            return subflows.get(full);
+        }
+        int schemaSep = full.lastIndexOf('_');
+        return schemaSep > 0 ? subflows.get(full.substring(schemaSep + 1)) : null;
+    }
+
+    /** Ключ direct-вызова: брокер-схема (префикс до «_») отбрасывается — реестр уже без неё. */
+    private static String shortSubflowKey(FlowNode reference) {
+        String full = reference.properties().getOrDefault("subflowName", "");
+        int schemaSep = full.lastIndexOf('_');
+        if (schemaSep < 0) {
+            schemaSep = full.lastIndexOf('/');
+        }
+        return schemaSep < 0 ? full : full.substring(schemaSep + 1);
+    }
+
+    /** Диагноз узла-ссылки: подпоток развёрнут (FR-2.2: direct-вызов + вложенный маршрут). */
+    private void diagnoseFlowReference(FlowNode reference, MsgFlow sub, String key, List<Diagnosis> raw) {
+        raw.add(new Diagnosis(reference.id(), reference.kind(), UnitStatus.CONVERTED,
+                "подпоток \"" + sub.name() + "\" развёрнут в маршрут direct:" + key
+                + " (FR-2.2: вложенный <route id=\"" + routeId(sub.name()) + "\">)"));
+    }
+
+    /** Развёрнутый маршрут подпотока: from direct: + цепочка от каждого Input-узла. */
+    private StringBuilder inlineRouteXml(MsgFlow sub) {
+        StringBuilder out = new StringBuilder();
+        String id = routeId(sub.name());
+        out.append(line(1, "<!-- source: подпоток " + sub.name() + " -->"))
+           .append(line(1, "<route id=\"" + id + "\">"))
+           .append(line(2, "<from uri=\"direct:" + id + "\"/>"));
+
+        StringBuilder steps = new StringBuilder();
+        List<Diagnosis> ignored = new ArrayList<>(); // диагнозы подпотока собирает inlineResult()
+        Set<String> visited = new LinkedHashSet<>();
+        for (FlowNode entry : sub.nodes()) {
+            if ("Input".equals(entry.kind())) {
+                visited.add(entry.id());
+                walk(entry, "out", 2, steps, ignored, visited, new LinkedHashSet<>(), sub, 1);
+            }
+        }
+        out.append(steps).append(line(1, "</route>"));
+        return out;
+    }
+
     private void emitChoice(FlowNode route, int indent, StringBuilder out,
-                            List<Diagnosis> raw, Set<String> visited) {
+                            List<Diagnosis> raw, Set<String> visited, Set<String> referenced,
+                            MsgFlow source, int depth) {
         out.append(line(indent, commentFor(route))).append(line(indent, "<choice>"));
         route.dynamicOutTerminals().stream()
                 .filter(t -> !"Default".equals(t))
                 .forEach(terminal -> out.append(line(indent + 1, "<when>"))
                         .append(line(indent + 2, "<simple>" + toSimple(route) + "</simple>"))
-                        .append(branch(indent + 2, route, terminal, raw, visited))
+                        .append(branch(indent + 2, route, terminal, raw, visited, referenced, source, depth))
                         .append(line(indent + 1, "</when>")));
-        connection(route.id(), "Default").ifPresent(link ->
+        connection(source, route.id(), "Default").ifPresent(link ->
                 out.append(line(indent + 1, "<otherwise>"))
-                   .append(branch(indent + 2, route, "Default", raw, visited))
+                   .append(branch(indent + 2, route, "Default", raw, visited, referenced, source, depth))
                    .append(line(indent + 1, "</otherwise>")));
         out.append(line(indent, "</choice>"));
     }
 
-    private StringBuilder branch(int indent, FlowNode route, String terminal,
-                                 List<Diagnosis> raw, Set<String> visited) {
+    private StringBuilder branch(int indent, FlowNode route, String terminal, List<Diagnosis> raw,
+                                 Set<String> visited, Set<String> referenced, MsgFlow source, int depth) {
         StringBuilder out = new StringBuilder();
-        walk(route, terminal, indent, out, raw, visited);
+        walk(route, terminal, indent, out, raw, visited, referenced, source, depth);
         return out;
     }
 
     private StringBuilder catchBranch(FlowNode input, List<Diagnosis> raw, Set<String> visited) {
         StringBuilder out = new StringBuilder();
         for (String terminal : new String[] {"catch", "failure"}) {
-            Optional<FlowConnection> link = connection(input.id(), terminal);
+            Optional<FlowConnection> link = connection(flow, input.id(), terminal);
             if (link.isPresent()) {
                 FlowNode target = flow.node(link.get().targetNodeId());
                 visited.add(target.id());
@@ -150,12 +293,14 @@ public final class RouteGenerator {
         return out;
     }
 
-    /** Диатнозы узлов, не достигнутых при обходе: конвертер не молчит о них (FR-5.2). */
-    private List<Diagnosis> orphanDiagnoses(Set<String> visited, boolean anyInput) {
-        String reason = anyInput
-                ? "нет пути от входного узла MQInput — узел не попал в маршрут"
-                : "в потоке нет входного узла MQInput — маршрут не сгенерирован";
-        return flow.nodes().stream()
+    /**
+     * Диагнозы узлов, не достигнутых при обходе: конвертер не молчит о них (FR-5.2).
+     * Причина передаётся вызывающим контекстом (родительский поток / подпоток).
+     */
+    private List<Diagnosis> orphanDiagnoses(MsgFlow source, Set<String> visited, boolean anyEntry,
+                                            String notReachedReason, String noEntryReason) {
+        String reason = anyEntry ? notReachedReason : noEntryReason;
+        return source.nodes().stream()
                 .filter(n -> !visited.contains(n.id()))
                 .map(n -> new Diagnosis(n.id(), n.kind(),
                         SUPPORTED_BASE_KINDS.contains(n.kind()) ? UnitStatus.PARTIAL : UnitStatus.NOT_SUPPORTED,
@@ -189,7 +334,7 @@ public final class RouteGenerator {
         String pattern = route.properties().getOrDefault("filterTable.filterPattern", "");
         long when = route.dynamicOutTerminals().stream().filter(t -> !"Default".equals(t)).count();
         String branches = when == 1 ? "1 ветвь" : when + " ветвей";
-        String note = branches + (connection(route.id(), "Default").isPresent()
+        String note = branches + (connection(flow, route.id(), "Default").isPresent()
                 ? " + otherwise" : "") + "; фильтр → simple";
         if (pattern.isBlank()) {
             raw.add(new Diagnosis(route.id(), route.kind(), UnitStatus.PARTIAL,
@@ -239,8 +384,8 @@ public final class RouteGenerator {
              + line(indent, "<log message=\"Unsupported IIB node: " + node.kind() + "\"/>");
     }
 
-    private Optional<FlowConnection> connection(String nodeId, String terminal) {
-        return flow.connections().stream()
+    private Optional<FlowConnection> connection(MsgFlow source, String nodeId, String terminal) {
+        return source.connections().stream()
                 .filter(c -> c.sourceNodeId().equals(nodeId) && c.sourceTerminal().equals(terminal))
                 .findFirst();
     }
@@ -301,8 +446,9 @@ public final class RouteGenerator {
         return mq.properties().getOrDefault("queueName", "TODO-queue-not-set");
     }
 
-    private String routeId() {
-        return flow.name().replaceAll("\\.msgflow$", "");
+    /** Идентификатор маршрута/ключ direct: имя IR без расширения потока или подпотока. */
+    private static String routeId(String flowName) {
+        return flowName.replaceAll("\\.(msgflow|subflow)$", "");
     }
 
     private static String commentFor(FlowNode node) {

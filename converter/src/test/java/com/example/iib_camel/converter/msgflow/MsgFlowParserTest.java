@@ -22,6 +22,14 @@ class MsgFlowParserTest {
         }
     }
 
+    private MsgFlow load(String resource) {
+        try (InputStream in = getClass().getResourceAsStream(resource)) {
+            return parser.parse(in);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     @Test
     void parsesFlowName() {
         assertEquals("Adapter.msgflow", adapterFlow().name());
@@ -42,6 +50,33 @@ class MsgFlowParserTest {
         assertEquals("Compute", flow.node("Enrich").kind());
         assertEquals("Route", flow.node("RouteByStatus").kind());
         assertEquals("MQOutput", flow.node("PriorityQueue").kind());
+    }
+
+    @Test
+    void parsesSubflowReferenceNodeWithResolvedTarget() {
+        var flow = orderFlow();
+        var ref = flow.node("CheckRef");
+        assertEquals("Subflow", ref.kind(), "канон ACE: <Имя>.subflow:FCMComposite_1 → Subflow");
+        assertEquals("Check", ref.properties().get("subflowName"),
+                "цель подпотока извлечена из xmi:type (A4)");
+        assertEquals("Validate via subflow", ref.label());
+    }
+
+    @Test
+    void parsesSubflowInputOutputAndTraceKinds() {
+        var sub = checkFlow();
+        assertEquals("Input", sub.node("SourceFlow").kind(), "eflow:FCMSource → Input");
+        assertEquals("Output", sub.node("SinkFlow").kind(), "eflow:FCMSink → Output");
+        assertEquals("Trace", sub.node("TraceNode").kind(), "ComIbmTrace.msgnode → Trace");
+        assertEquals("Check.subflow", sub.name(), "имя подпотока из nsURI — юнит отчёта");
+    }
+
+    private MsgFlow orderFlow() {
+        return load("/corpus/corr-02-subflows/Order.msgflow");
+    }
+
+    private MsgFlow checkFlow() {
+        return load("/corpus/corr-02-subflows/Check.subflow");
     }
 
     @Test
