@@ -103,6 +103,7 @@ iib-camel/
 
 ## Документация
 
+- [Ручная проверка `analyze`: примеры и ожидаемые результаты](examples/analyze/README.ru.md)
 - [README.ru.md](README.ru.md) — русский readme (этот файл)
 - [Функциональные требования (RU)](docs/functional-requirements.ru.md)
 - [Functional requirements (EN)](docs/functional-requirements.en.md)

@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ecore:EPackage xmi:version="2.0"
+    xmlns:xmi="http://www.omg.org/XMI"
+    xmlns:ComIbmMQInput.msgnode="ComIbmMQInput.msgnode"
+    xmlns:ComIbmCompute.msgnode="ComIbmCompute.msgnode"
+    xmlns:ComIbmRoute.msgnode="ComIbmRoute.msgnode"
+    xmlns:ComIbmMQOutput.msgnode="ComIbmMQOutput.msgnode"
+    xmlns:Audit.subflow="Audit.subflow"
+    xmlns:ecore="http://www.eclipse.org/emf/2002/Ecore"
+    xmlns:eflow="http://www.ibm.com/wbi/2005/eflow"
+    xmlns:utility="http://www.ibm.com/wbi/2005/eflow_utility"
+    nsURI="OrderIntake.msgflow" nsPrefix="OrderIntake.msgflow">
+  <eClassifiers xmi:type="eflow:FCMComposite" name="FCMComposite_1">
+    <eSuperTypes href="http://www.ibm.com/wbi/2005/eflow#//FCMBlock"/>
+    <translation xmi:type="utility:TranslatableString" key="OrderIntake" bundleName="OrderIntake" pluginId="ExampleApplication"/>
+    <composition>
+      <nodes xmi:type="ComIbmMQInput.msgnode:FCMComposite_1" xmi:id="Input" location="24,160" queueName="ORDERS.IN" messageDomainProperty="XMLNSC">
+        <translation xmi:type="utility:ConstantString" string="Order input"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="Normalize" location="200,160" computeExpression="esql://routine/orders#NormalizeOrder.Main">
+        <translation xmi:type="utility:ConstantString" string="Normalize order"/>
+      </nodes>
+      <nodes xmi:type="ComIbmRoute.msgnode:FCMComposite_1" xmi:id="Classify" location="376,160" distributionMode="First">
+        <outTerminals terminalNodeID="Priority" dynamic="true" label="Priority"/>
+        <outTerminals terminalNodeID="Review" dynamic="true" label="Review"/>
+        <translation xmi:type="utility:ConstantString" string="Classify order"/>
+        <filterTable filterPattern="$Body/Order/priority='EXPRESS'" routingOutputTerminal="Priority"/>
+        <filterTable filterPattern="$Body/Order/amount &gt; 5000" routingOutputTerminal="Review"/>
+      </nodes>
+      <nodes xmi:type="ComIbmMQOutput.msgnode:FCMComposite_1" xmi:id="PriorityQueue" location="576,32" queueName="ORDERS.PRIORITY.Q">
+        <translation xmi:type="utility:ConstantString" string="Priority queue"/>
+      </nodes>
+      <nodes xmi:type="Audit.subflow:FCMComposite_1" xmi:id="AuditRef" location="576,160">
+        <translation xmi:type="utility:ConstantString" string="Audit review"/>
+      </nodes>
+      <nodes xmi:type="ComIbmMQOutput.msgnode:FCMComposite_1" xmi:id="StandardQueue" location="776,160" queueName="ORDERS.STANDARD.Q">
+        <translation xmi:type="utility:ConstantString" string="Standard queue"/>
+      </nodes>
+      <nodes xmi:type="ComIbmMQOutput.msgnode:FCMComposite_1" xmi:id="ErrorQueue" location="200,320" queueName="ORDERS.ERROR.Q">
+        <translation xmi:type="utility:ConstantString" string="Input error queue"/>
+      </nodes>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="Conn1" sourceNode="Input" sourceTerminalName="OutTerminal.out" targetNode="Normalize" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="Conn2" sourceNode="Normalize" sourceTerminalName="OutTerminal.out" targetNode="Classify" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="Conn3" sourceNode="Classify" sourceTerminalName="Priority" targetNode="PriorityQueue" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="Conn4" sourceNode="Classify" sourceTerminalName="Review" targetNode="AuditRef" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="Conn5" sourceNode="Classify" sourceTerminalName="Default" targetNode="StandardQueue" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="Conn6" sourceNode="Input" sourceTerminalName="OutTerminal.catch" targetNode="ErrorQueue" targetTerminalName="InTerminal.in"/>
+    </composition>
+    <propertyOrganizer/>
+    <stickyBoard/>
+  </eClassifiers>
+</ecore:EPackage>

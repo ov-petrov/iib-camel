@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ecore:EPackage xmi:version="2.0"
+    xmlns:xmi="http://www.omg.org/XMI"
+    xmlns:ComIbmTrace.msgnode="ComIbmTrace.msgnode"
+    xmlns:ecore="http://www.eclipse.org/emf/2002/Ecore"
+    xmlns:eflow="http://www.ibm.com/wbi/2005/eflow"
+    xmlns:utility="http://www.ibm.com/wbi/2005/eflow_utility"
+    nsURI="Audit.subflow" nsPrefix="Audit.subflow">
+  <eClassifiers xmi:type="eflow:FCMComposite" name="FCMComposite_1">
+    <eSuperTypes href="http://www.ibm.com/wbi/2005/eflow#//FCMBlock"/>
+    <translation xmi:type="utility:TranslatableString" key="Audit" bundleName="Audit" pluginId="ExampleApplication"/>
+    <composition>
+      <nodes xmi:type="eflow:FCMSource" xmi:id="SubInput" location="24,80">
+        <translation xmi:type="utility:ConstantString" string="Input"/>
+      </nodes>
+      <nodes xmi:type="ComIbmTrace.msgnode:FCMComposite_1" xmi:id="Trace" location="200,80" destinationTraceLevel="messageFlow" destinationTraceNode="userTrace">
+        <translation xmi:type="utility:ConstantString" string="Audit trace (unsupported)"/>
+      </nodes>
+      <nodes xmi:type="eflow:FCMSink" xmi:id="SubOutput" location="376,80">
+        <translation xmi:type="utility:ConstantString" string="Output"/>
+      </nodes>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="SubConn1" sourceNode="SubInput" sourceTerminalName="OutTerminal.out" targetNode="Trace" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="SubConn2" sourceNode="Trace" sourceTerminalName="OutTerminal.out" targetNode="SubOutput" targetTerminalName="InTerminal.in"/>
+    </composition>
+    <propertyOrganizer/>
+    <stickyBoard/>
+  </eClassifiers>
+</ecore:EPackage>

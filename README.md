@@ -104,6 +104,7 @@ Incomplete ESQL beans fail before executing business operations. See
 
 ## Documentation
 
+- [Manual `analyze` walkthrough: fixtures and expected results (RU)](examples/analyze/README.ru.md)
 - [README.ru.md](README.ru.md) — Russian readme
 - [Functional requirements (RU)](docs/functional-requirements.ru.md)
 - [Functional requirements (EN)](docs/functional-requirements.en.md)

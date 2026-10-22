@@ -1,0 +1,29 @@
+BROKER SCHEMA orders
+
+CREATE COMPUTE MODULE NormalizeOrder
+  CREATE FUNCTION Main() RETURNS BOOLEAN
+  BEGIN
+    SET OutputRoot = InputRoot;
+    SET OutputRoot.MQMD.ApplicationIdData = 'ANALYZE-DEMO';
+    RETURN TRUE;
+  END;
+END MODULE;
+
+CREATE COMPUTE MODULE ReviewOrder
+  CREATE FUNCTION Main() RETURNS BOOLEAN
+  BEGIN
+    SET OutputRoot = InputRoot;
+    IF InputBody.Order.Status = 'HOLD' THEN
+      SET OutputRoot.XMLNSC.Order.Status = 'REVIEW';
+    END IF;
+    RETURN TRUE;
+  END;
+END MODULE;
+
+CREATE COMPUTE MODULE ExternalLookup
+  CREATE FUNCTION Main() RETURNS BOOLEAN
+  BEGIN
+    CALL LookupCustomer(InputRoot.XMLNSC.Order.CustomerId);
+    RETURN TRUE;
+  END;
+END MODULE;
