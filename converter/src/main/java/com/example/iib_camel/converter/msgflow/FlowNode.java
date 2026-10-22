@@ -3,10 +3,18 @@ package com.example.iib_camel.converter.msgflow;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Узел потока. kind — каноническое имя типа без префикса ComIbm и суффикса .msgnode
- * (например MQInput, Compute, Route); для подпотоков — "Subflow".
- */
 public record FlowNode(String id, String kind, String label, Map<String, String> properties,
-                       List<String> dynamicOutTerminals) {
+                       List<String> dynamicOutTerminals, List<RouteRule> routeRules) {
+    public FlowNode {
+        routeRules = List.copyOf(routeRules);
+    }
+
+    public FlowNode(String id, String kind, String label, Map<String, String> properties,
+                    List<String> dynamicOutTerminals) {
+        this(id, kind, label, properties, dynamicOutTerminals,
+                properties.containsKey("filterTable.filterPattern")
+                        ? List.of(new RouteRule(properties.get("filterTable.filterPattern"),
+                                properties.getOrDefault("filterTable.routingOutputTerminal", "")))
+                        : List.of());
+    }
 }

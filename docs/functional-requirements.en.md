@@ -169,6 +169,10 @@ The system is used:
   are flattened. Models are a visual basis for future FR-4.1 mappers; the full ULM output
   (per Message Set) remains out of scope for this level.
 
+Implementation update after blocker fixes (2026-10-22): incomplete ESQL beans fail before any business operation; control-flow blocks cannot leak unconditional SET statements. Route preserves XPath and every filterTable row with First/All modes. XML paths include the document root; JSON, namespaces and indexed ESQL paths are currently rejected. This is a bounded profile; full ULM and MapStruct remain future work. See [implementation progress (RU)](implementation-progress.ru.md).
+
+B1 implementation update (2026-10-22): canonical single-entry/single-exit subflows are emitted once per batch, including nested references. Graph generation preserves fan-out and MQOutput continuation; cycles and unknown terminals are diagnosed. Input.catch and local Compute/Route.failure chains restore their input message. MQInput.failure and multiple subflow propagations remain unsupported. Output files use manifest ownership and collision/path checks.
+
 ### 3.4. MapStruct mapper generation
 
 - **FR-4.1. (Must/Should)** By the logic of Mapping nodes (message transformation flows), the system shall

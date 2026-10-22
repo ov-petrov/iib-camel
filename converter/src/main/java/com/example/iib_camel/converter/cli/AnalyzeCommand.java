@@ -32,32 +32,6 @@ import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.stream.Stream;
 
-/**
- * Команда инвентаризации системы IIB **до миграции** (docs/diagram-renderer-design.ru.md).
- *
- * Контракт:
- *
- *   iib-camel-converter analyze [--input &lt;файл|каталог&gt;] [--output &lt;каталог&gt;]
- *                               [--orientation LR|TB] [--format mermaid|adoc|md|all] [--fail-fast]
- *
- * Результат — «отчёт + визуализация текущей системы»: .mmd (Mermaid, канонический для
- * GitHub), .adoc (AsciiDoc-документ) и .md (инвентаризационный отчёт со встроенной
- * ```mermaid-схемой, таблицами узлов/связей и вердиктом о покрытии: предусмотрена ли
- * обработка всех узлов IIB). ASCII-схема («дерево-конспект») удалена как дублирующая
- * Mermaid. Полный отчёт о конвертации — команда convert (FR-5.1).
- *
- * Дополнительно по .esql-файлам (в той же директории, что и схемы, или же по одиночному
- * .esql) строится системный инвентарь ESQL «как есть» — `esql-inventory.md`: модули,
- * функции, операторы и оценка переводимости по подмножеству FR-3.2. Артефакты конвертации
- * (бины, модели) на этой стадии не создаются — их показывает отчёт convert.
- *
- * Вход — файл .msgflow/.subflow/.esql либо каталог (обход рекурсивно); по умолчанию ./input.
- * Выход — каталог --output (по умолчанию ./output, создаётся при отсутствии).
- * Диагностика — stderr, сводка — stdout.
- *
- * Коды возврата: 0 — всё отрисовано; 1 — неверные аргументы; 2 — частичный успех
- * (часть файлов не разобрана, остальные отрисованы); 3 — ни один файл не отрисован.
- */
 @Command(name = "analyze",
          description = "Инвентаризация системы IIB до миграции: схема + отчёт «как есть».")
 public final class AnalyzeCommand implements Callable<Integer> {
@@ -90,7 +64,6 @@ public final class AnalyzeCommand implements Callable<Integer> {
     @Option(names = "--fail-fast", description = "Остановить пакетную обработку на первой ошибке разбора.")
     boolean failFast;
 
-    /** Явный конвертер путей — не полагаемся на встроенные правила picocli. */
     static final class PathConverter implements ITypeConverter<Path> {
         @Override
         public Path convert(String value) {
@@ -138,9 +111,7 @@ public final class AnalyzeCommand implements Callable<Integer> {
             return 3;
         }
 
-        Files.createDirectories(output);
-
-        // База для сообщений: путь файла относительно корня входа (FR-1.3: файл+строка в диагностике)
+        ArtifactOutput artifactOutput = new ArtifactOutput(output, "analyze");
         Path base = Files.isDirectory(input) ? input : input.getParent() == null ? Path.of(".") : input.getParent();
 
         Map<String, Set<String>> usedByExt = new HashMap<>();
@@ -154,7 +125,7 @@ public final class AnalyzeCommand implements Callable<Integer> {
         for (Path file : files) {
             try (InputStream in = Files.newInputStream(file)) {
                 MsgFlow flow = parser.parse(in);
-                String name = diagramName(flow.name(), stemOf(file));
+                String name = ArtifactOutput.fileStem(diagramName(flow.name(), stemOf(file)));
                 String relative = base.relativize(file).toString();
                 for (String extension : formats) {
                     String fileName = uniqueName(name, extension,
@@ -164,14 +135,13 @@ public final class AnalyzeCommand implements Callable<Integer> {
                         case ".md" -> analysisRenderer.render(flow, orient, relative);
                         default -> mermaidRenderer.render(flow, orient);
                     };
-                    Files.writeString(output.resolve(fileName), content, StandardCharsets.UTF_8);
+                    artifactOutput.stage(fileName, content);
                     artifacts++;
                 }
                 rendered++;
                 nodes += flow.nodes().size();
                 edges += flow.connections().size();
             } catch (IllegalArgumentException e) {
-                // ошибки разбора оборачиваются парсером IR в IllegalArgumentException с описанием
                 System.err.println(base.relativize(file) + ": " + e.getMessage());
                 failures++;
                 if (failFast) {
@@ -185,28 +155,32 @@ public final class AnalyzeCommand implements Callable<Integer> {
                 }
             }
         }
-
-        // Системный инвентарь ESQL «как есть» (отдельные артефакты конвертации не создаются):
-        // ошибки разбора ESQL учитываются в общем счётчике failures (политика кодов не меняется).
         EsqlInventoryRenderer.RenderResult esqlResult = null;
         int esqlFailures = 0;
         for (Path file : esqlFiles) {
+            if (failFast && failures > 0) break;
             try {
                 List<EsqlModule> modules = esqlParser.parseAll(Files.readString(file, StandardCharsets.UTF_8));
                 esqlInfos.add(new EsqlInventoryRenderer.EsqlFileInfo(
                         base.relativize(file).toString(), modules, null));
             } catch (IllegalArgumentException | IOException e) {
-                // честная строка ошибки в инвентаре вместо молчаливого пропуска файла
                 esqlInfos.add(new EsqlInventoryRenderer.EsqlFileInfo(
                         base.relativize(file).toString(), List.of(),
                         e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
                 esqlFailures++;
+                if (failFast) break;
             }
         }
         if (!esqlInfos.isEmpty()) {
             esqlResult = esqlInventoryRenderer.render(esqlInfos);
-            Files.writeString(output.resolve("esql-inventory.md"),
-                    esqlResult.markdown(), StandardCharsets.UTF_8);
+            artifactOutput.stage("esql-inventory.md", esqlResult.markdown());
+        }
+
+        try {
+            artifactOutput.publish();
+        } catch (IOException | IllegalArgumentException e) {
+            System.err.println("Вывод не опубликован: " + e.getMessage());
+            return 3;
         }
 
         System.out.print("Инвентаризация: потоков " + rendered
@@ -227,9 +201,9 @@ public final class AnalyzeCommand implements Callable<Integer> {
                 : (rendered > 0 || esqlResult != null ? 2 : 3);
     }
 
-    /** Сбор файлов схем: одиночный файл либо рекурсивный обход каталога (детерминированный порядок). */
     private List<Path> collectFlowFiles() throws IOException {
         if (Files.isRegularFile(input)) {
+            if (isEsqlFile(input)) return List.of();
             if (!isFlowFile(input)) {
                 System.err.println("Ошибка аргументов: ожидался файл .msgflow/.subflow, получен: " + input);
                 return null;
@@ -244,7 +218,6 @@ public final class AnalyzeCommand implements Callable<Integer> {
         }
     }
 
-    /** Сбор ESQL-файлов: одиночный .esql либо обход каталога; список может быть пустым. */
     private List<Path> collectEsqlFiles() throws IOException {
         if (Files.isRegularFile(input)) {
             return isEsqlFile(input) ? List.of(input) : List.of();
@@ -266,12 +239,10 @@ public final class AnalyzeCommand implements Callable<Integer> {
         return file.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".esql");
     }
 
-    /** Имя файла схемы: политика DiagramNames (имя IR без расширения, fallback — stem файла). */
     static String diagramName(String flowName, String fileStem) {
         return DiagramNames.of(flowName, fileStem);
     }
 
-    /** Разрешение коллизий имён в плоском каталоге вывода: Adapter.mmd, Adapter-2.mmd, … */
     private String uniqueName(String base, String extension, Set<String> used) {
         String candidate = base + extension;
         if (used.add(candidate)) {

@@ -9,10 +9,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Тесты перевода ESQL → Java (FR-3.2): конвертируемое подмножество
- * (copy/MQMD/тело/CAST) переводится; ветвления и вызовы — честный TODO (FR-3.3).
- */
 class EsqlTranslatorTest {
 
     @Test
@@ -114,7 +110,67 @@ class EsqlTranslatorTest {
                 "причина — сам фрагмент из парсера");
     }
 
-    /** Явное сохранение нелитеральных SET (не в подмножестве) — это делает отказ — здесь цель. */
+        @Test
+    void translatesEscapedApostrophesAndMultilineSemicolonLiterals() {
+        var translation = translate("""
+                SET OutputRoot.MQMD.CommentField = 'it''s; first
+                second';
+                RETURN TRUE;
+                """);
+        assertTrue(translation.complete());
+        assertEquals("mqmd(exchange, \"CommentField\", \"it's; first\\nsecond\");",
+                translation.statements().getFirst().java());
+    }
+
+    @Test
+    void rejectsConcatenationInsteadOfTreatingItAsAString() {
+        for (String value : java.util.List.of("'a' || 'b'", "'a' + 'b'", "CAST('a' || 'b' AS CHARACTER)")) {
+            var translation = translate("SET OutputRoot.MQMD.CommentField = " + value + "; RETURN TRUE;");
+            assertFalse(translation.complete(), value);
+            assertEquals(UnitStatus.NOT_SUPPORTED, translation.statements().getFirst().status(), value);
+        }
+    }
+
+    @Test
+    void rejectsReturnFalsePropagateDeclarationsAndMissingReturn() {
+        for (String body : java.util.List.of("RETURN FALSE;", "PROPAGATE; RETURN TRUE;",
+                "DECLARE flag BOOLEAN TRUE; RETURN TRUE;", "SET OutputRoot = InputRoot;",
+                "RETURN TRUE; SET OutputRoot = InputRoot;", "CALL Helper(); RETURN TRUE;")) {
+            var translation = translate(body);
+            assertFalse(translation.complete(), body);
+            assertFalse(translation.issues().isEmpty(), body);
+        }
+    }
+
+    @Test
+    void rejectsUnsupportedDomainsAndStructuredPathsInsteadOfCallingXmlHelper() {
+        for (String target : java.util.List.of("OutputRoot.JSON.Data.Status", "OutputRoot.XMLNSC.ns:Order.Status",
+                "OutputRoot.XMLNSC.Order.Item[1]", "OutputRoot.NSC.Order.Status", "OutputRoot.NS.Order.Status")) {
+            var translation = translate("SET " + target + " = 'value'; RETURN TRUE;");
+            assertFalse(translation.complete(), target);
+            assertEquals(UnitStatus.NOT_SUPPORTED, translation.statements().getFirst().status());
+            assertFalse(translation.statements().getFirst().java().startsWith("setBodyField"));
+        }
+        var json = translate("SET OutputRoot.JSON.Data.Status = 'value'; RETURN TRUE;");
+        assertTrue(json.issues().getFirst().contains("JSON"));
+        var domainCopy = translate("SET OutputRoot.XMLNSC = InputRoot; RETURN TRUE;");
+        assertFalse(domainCopy.complete());
+        assertFalse(domainCopy.statements().getFirst().java().equals("copy(exchange);"));
+    }
+
+    @Test
+    void databaseModuleDoesNotBecomeAComputeBean() {
+        var function = mainOf("CREATE DATABASE MODULE Example CREATE FUNCTION Main() RETURNS BOOLEAN "
+                + "BEGIN RETURN TRUE; END; END MODULE;");
+        assertFalse(new EsqlTranslator(function).translate().complete());
+        assertTrue(function.unsupportedFragments().stream().anyMatch(f -> f.contains("DATABASE")));
+    }
+
+    private static EsqlTranslator.FunctionTranslation translate(String body) {
+        return new EsqlTranslator(mainOf("CREATE COMPUTE MODULE Example "
+                + "CREATE FUNCTION Main() RETURNS BOOLEAN BEGIN\n" + body + "\nEND; END MODULE;")).translate();
+    }
+
     private static EsqlFunction mainOf(String... unused) {
         return new EsqlParser().parse(String.join("\n", unused)).function("Main").orElseThrow();
     }

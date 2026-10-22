@@ -13,16 +13,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Контракт CLI-команды analyze (дизайн-документ, раздел 5):
- * коды возврата 0/1/2/3, артефакты .mmd/.adoc/.md, коллизии имён,
- * дефолты ./input → ./output (все три формата).
- */
 class AnalyzeCommandTest {
 
     private static final String SAMPLE_MSGFLOW = """
             <?xml version="1.0" encoding="UTF-8"?>
             <ecore:EPackage xmi:version="2.0" xmlns:xmi="http://www.omg.org/XMI"
+                xmlns:ComIbmTrace.msgnode="ComIbmTrace.msgnode"
                 xmlns:ComIbmMQInput.msgnode="ComIbmMQInput.msgnode" xmlns:ComIbmMQOutput.msgnode="ComIbmMQOutput.msgnode"
                 xmlns:ecore="http://www.eclipse.org/emf/2002/Ecore" nsURI="Sample.msgflow" nsPrefix="Sample.msgflow">
               <eClassifiers xmi:type="eflow:FCMComposite" name="FCMComposite_1">
@@ -139,13 +135,13 @@ class AnalyzeCommandTest {
     }
 
     @Test
-    void noArgumentsResolveToCwdInputAndOutput() throws Exception {
-        Path input = Path.of("input");
-        Path output = Path.of("output");
+    void noArgumentsResolveToCwdInputAndOutput(@TempDir Path temp) throws Exception {
+        Path input = temp.resolve("input");
+        Path output = temp.resolve("output");
         Files.createDirectories(input);
         Files.writeString(input.resolve("Sample.msgflow"), SAMPLE_MSGFLOW);
         try {
-            assertEquals(0, run());
+            assertEquals(0, CliProcess.run(temp, "analyze"));
             assertTrue(Files.exists(output.resolve("Sample.mmd")), "дефолт --output: ./output");
             assertTrue(Files.exists(output.resolve("Sample.adoc")));
             assertTrue(Files.exists(output.resolve("Sample.md")));
@@ -217,13 +213,10 @@ class AnalyzeCommandTest {
 
         assertEquals(0, run("--input", input.toString(), "--output", output.toString(),
                 "--format", "md"));
-
-        // родительский поток: MQInput + Subflow + MQOutput — все в базовом наборе → «да»
         String parent = Files.readString(output.resolve("Order.md"));
         assertTrue(parent.contains("Обработка всех узлов IIB предусмотрена конвертером: **да** (4 из 4 узлов)"));
         assertTrue(parent.contains("| `CheckRef` | Subflow | ссылка на подпоток |"),
                 "узел-ссылка на подпоток категория REFERENCE");
-        // подпоток: Trace вне базового набора → «нет», с путями решения
         String sub = Files.readString(output.resolve("Check.md"));
         assertTrue(sub.contains("Обработка всех узлов IIB предусмотрена конвертером: **нет** (3 из 4 узлов)"));
         assertTrue(sub.contains("| `TraceNode` | Trace | обработка | — | нет (ручная миграция) |"));
@@ -291,8 +284,6 @@ class AnalyzeCommandTest {
         Path output = temp.resolve("out");
 
         assertEquals(0, run("--input", input.toString(), "--output", output.toString()));
-
-        // инвентарь ESQL — системный артефакт «как есть», без бинов/моделей (граница с convert)
         String inventory = Files.readString(output.resolve("esql-inventory.md"));
         assertTrue(inventory.contains("Инвентарь ESQL «как есть»"));
         assertTrue(inventory.contains("| Adjust_Compute1 | COMPUTE | 1 | 2 | 1 | переводимо частично"),

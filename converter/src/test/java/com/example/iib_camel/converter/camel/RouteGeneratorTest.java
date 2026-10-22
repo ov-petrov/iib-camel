@@ -14,12 +14,6 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Тесты генератора (L2): семантические проверки + golden-сравнение из
- * docs/test-strategy.ru.md, а также диагностичка единиц конвертации (FR-5.2):
- * нехватка свойств → «частично», неизвестный тип → «не поддерживается»,
- * узлы вне пути от MQInput не молчат.
- */
 class RouteGeneratorTest {
 
     private MsgFlow adapterFlow() {
@@ -30,7 +24,6 @@ class RouteGeneratorTest {
         }
     }
 
-    /** corr-02: родительский поток со ссылкой на подпоток и реестром из Check.subflow. */
     private RouteGenerator orderGenerator() {
         var parser = new MsgFlowParser();
         MsgFlow order = load("/corpus/corr-02-subflows/Order.msgflow");
@@ -51,13 +44,12 @@ class RouteGeneratorTest {
         String xml = new RouteGenerator(adapterFlow()).generate().xml();
         assertTrue(xml.contains("<from uri=\"jms:ADAPTER.IN\"/>"));
         assertTrue(xml.contains("<to uri=\"bean:adapterCompute1\"/>"));
-        assertTrue(xml.contains("<simple>${body.order.status} == 'HIGH'</simple>"));
+        assertTrue(xml.contains("<xpath>/Adapter/Order/status=&apos;HIGH&apos;</xpath>"));
         assertTrue(xml.contains("<to uri=\"jms:ADAPTER.PRIORITY.Q\"/>"));
         assertTrue(xml.contains("<to uri=\"jms:ADAPTER.DEFAULT.Q\"/>"));
         assertTrue(xml.contains("<to uri=\"jms:ADAPTER.ERROR.Q\"/>"));
         assertTrue(xml.contains("<doCatch>"));
         assertTrue(xml.contains("<otherwise>"));
-        // трассируемость: каждый шаг помечен исходным узлом (FR-2.6)
         assertTrue(xml.contains("source: узел RouteByStatus"));
     }
 
@@ -82,7 +74,6 @@ class RouteGeneratorTest {
 
     @Test
     void missingPropertiesAndUnknownKindAreDiagnosed() {
-        // In — без queueName; Comp → Out (MQOutput без queueName); Trace1 — вне пути
         var flow = new MsgFlow("Broken.msgflow",
                 List.of(
                         new FlowNode("In", "MQInput", "", Map.of(), List.of()),
@@ -147,7 +138,6 @@ class RouteGeneratorTest {
                 "содержимое подпотока развёрнуто во вложенный маршрут");
         assertTrue(result.xml().contains("Unsupported IIB node: Trace"),
                 "Trace внутри подпотока — честная заглушка FR-2.7");
-        // родительская цепочка после подпотока продолжается (out от узла-ссылки)
         assertTrue(result.xml().contains("<to uri=\"jms:ORDERS.OUT\"/>"));
         assertEquals(UnitStatus.CONVERTED, result.statusOf("Acked"));
     }
@@ -183,6 +173,5 @@ class RouteGeneratorTest {
                 "Trace-узел внутри подпотока честно помечен (FR-2.7)");
         assertEquals(UnitStatus.CONVERTED, result.statusOf("SinkFlow"),
                 "выход подпотока (eflow:FCMSink) → конвертировано");
-        // родительский поток с empty-диагностикой не участвует: диапазон только по Check.subflow
     }
 }

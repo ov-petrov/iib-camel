@@ -52,8 +52,6 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter</artifactId>
         </dependency>
-
-        <!-- Camel: ядро + загрузка XML-маршрутов (сгенерированных конвертером) -->
         <dependency>
             <groupId>org.apache.camel.springboot</groupId>
             <artifactId>camel-spring-boot-starter</artifactId>
@@ -62,23 +60,22 @@
             <groupId>org.apache.camel</groupId>
             <artifactId>camel-xml-io-dsl</artifactId>
         </dependency>
-        <!-- Camel: доставка сообщений через JMS (FR-R2.1) -->
+        <dependency>
+            <groupId>org.apache.camel</groupId>
+            <artifactId>camel-xpath</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.apache.camel.springboot</groupId>
             <artifactId>camel-jms-starter</artifactId>
         </dependency>
-        <!-- Artemis: JMS-клиент (embedded-брокер подключается в тестах) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-artemis</artifactId>
         </dependency>
-        <!-- Разбор XML-сообщений в модель (ULM, FR-3.4) -->
         <dependency>
             <groupId>com.fasterxml.jackson.dataformat</groupId>
             <artifactId>jackson-dataformat-xml</artifactId>
         </dependency>
-
-        <!-- Геттеры/сеттеры моделей и @Slf4j (версию управляет Boot BOM) -->
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
@@ -90,9 +87,12 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
-        <!-- Встроенный брокер: runtime-зависимость, чтобы boot-jar работал «из коробки»
-             (spring.artemis.mode=EMBEDDED по умолчанию). Для внешнего брокера
-             переопределяется через spring.artemis.mode=NATIVE + spring.artemis.host/port. -->
+        <dependency>
+            <groupId>ru.petrov-ov.tools</groupId>
+            <artifactId>iib-camel-converter</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.apache.activemq</groupId>
             <artifactId>artemis-jakarta-server</artifactId>
@@ -101,13 +101,21 @@
     </dependencies>
 
     <build>
+        <testResources>
+            <testResource>
+                <directory>src/test/resources</directory>
+            </testResource>
+            <testResource>
+                <directory>../converter/src/test/resources/corpus</directory>
+                <targetPath>corpus</targetPath>
+            </testResource>
+        </testResources>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
             </plugin>
-            <!-- javac начиная с JDK 23 не запускает процессоры, найденные неявно
-                 по classpath: Lombok подключается только явно -->
+            <!-- JDK 23+ requires explicit annotation processor configuration. -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>

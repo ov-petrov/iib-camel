@@ -3,16 +3,26 @@
   <!-- source: узел Input (MQInput) -->
   <route id="Order">
     <from uri="jms:ORDERS.IN"/>
+    <bean beanType="com.example.iib_camel.runtime.compute.MessageSnapshots" method="capture"/>
     <doTry>
+      <removeProperty name="iib_complete_436865636b2e737562666c6f77"/>
       <!-- source: узел CheckRef (Subflow) -->
       <to uri="direct:Check"/>
-      <!-- source: узел Acked (MQOutput) -->
-      <to uri="jms:ORDERS.OUT"/>
+      <filter>
+        <exchangeProperty>iib_complete_436865636b2e737562666c6f77</exchangeProperty>
+        <!-- source: узел Acked (MQOutput) -->
+        <to uri="jms:ORDERS.OUT"/>
+      </filter>
+      <removeProperty name="iib_complete_436865636b2e737562666c6f77"/>
       <doCatch>
         <exception>java.lang.Exception</exception>
+        <bean beanType="com.example.iib_camel.runtime.compute.MessageSnapshots" method="restore"/>
         <!-- source: узел Rejected (MQOutput) -->
         <to uri="jms:ORDERS.ERROR.Q"/>
       </doCatch>
+      <doFinally>
+        <bean beanType="com.example.iib_camel.runtime.compute.MessageSnapshots" method="release"/>
+      </doFinally>
     </doTry>
   </route>
   <!-- source: подпоток Check.subflow -->
@@ -22,6 +32,8 @@
     <to uri="bean:checkCompute1"/>
     <!-- TODO (FR-2.7): правило конвертации узла "Trace" не определено -->
     <log message="Unsupported IIB node: Trace"/>
+    <setProperty name="iib_complete_436865636b2e737562666c6f77">
+      <constant>true</constant>
+    </setProperty>
   </route>
-
 </routes>

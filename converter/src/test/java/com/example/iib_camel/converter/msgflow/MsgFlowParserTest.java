@@ -3,13 +3,14 @@ package com.example.iib_camel.converter.msgflow;
 import org.junit.jupiter.api.Test;
 
 import java.io.InputStream;
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Юнит-тесты парсера .msgflow на fixture corr-01-simple-adapter (уровень L1 стратегии тестирования). */
 class MsgFlowParserTest {
 
     private final MsgFlowParser parser = new MsgFlowParser();
@@ -102,6 +103,28 @@ class MsgFlowParserTest {
         assertEquals("$Body/Adapter/Order/status='HIGH'",
                 route.properties().get("filterTable.filterPattern"));
         assertEquals("Match", route.dynamicOutTerminals().getFirst());
+        assertEquals(List.of(new RouteRule("$Body/Adapter/Order/status='HIGH'", "Match")), route.routeRules());
+    }
+
+    @Test
+    void preservesEveryFilterTableRowInSourceOrderIncludingRepeatedTerminals() {
+        String xml = """
+                <ecore:EPackage xmlns:ecore="http://www.eclipse.org/emf/2002/Ecore"
+                    xmlns:xmi="http://www.omg.org/XMI" nsURI="Rules.msgflow">
+                  <nodes xmi:type="ComIbmRoute.msgnode:FCMComposite_1" xmi:id="Route" distributionMode="First">
+                    <outTerminals terminalNodeID="Audit"/>
+                    <outTerminals terminalNodeID="High"/>
+                    <filterTable filterPattern="$Body/Order/amount&gt;100" routingOutputTerminal="High"/>
+                    <filterTable filterPattern="$Body/Order/status='HIGH'" routingOutputTerminal="Audit"/>
+                    <filterTable filterPattern="$Body/Order/amount&lt;0" routingOutputTerminal="High"/>
+                  </nodes>
+                </ecore:EPackage>
+                """;
+        var route = parser.parse(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8))).node("Route");
+        assertEquals("First", route.properties().get("distributionMode"));
+        assertEquals(List.of(new RouteRule("$Body/Order/amount>100", "High"),
+                new RouteRule("$Body/Order/status='HIGH'", "Audit"),
+                new RouteRule("$Body/Order/amount<0", "High")), route.routeRules());
     }
 
     @Test
@@ -118,7 +141,6 @@ class MsgFlowParserTest {
         assertTrue(connections.stream().anyMatch(c ->
                 c.sourceNodeId().equals("RouteByStatus") && c.sourceTerminal().equals("Default")
                         && c.targetNodeId().equals("DefaultQueue")));
-        // ветка catch входного узла — обработка ошибок (FR-2.3)
         assertTrue(connections.stream().anyMatch(c ->
                 c.sourceNodeId().equals("Input") && c.sourceTerminal().equals("catch")
                         && c.targetNodeId().equals("ErrorQueue")));
@@ -133,5 +155,96 @@ class MsgFlowParserTest {
             }
         };
         assertThrows(IllegalArgumentException.class, () -> parser.parse(fake));
+    }
+
+    @Test
+    void parsesRenamedXmiAndClassifierPrefixesIntoTheSameIr() {
+        String original = readResource("/corpus/corr-02-subflows/Check.subflow");
+        String renamed = original
+                .replace("xmlns:xmi=", "xmlns:meta=")
+                .replace("xmi:", "meta:")
+                .replace("xmlns:eflow=", "xmlns:engine=")
+                .replace("eflow:", "engine:")
+                .replace("xmlns:ComIbmTrace.msgnode=\"ComIbmTrace.msgnode\"", "xmlns:traceNode=\"ComIbmTrace.msgnode\"")
+                .replace("ComIbmTrace.msgnode:", "traceNode:");
+        assertEquals(parse(original), parse(renamed));
+    }
+
+    @Test
+    void parsesNamespacedStructuralChildElementsByLocalName() {
+        String xml = """
+                <ecore:EPackage xmlns:ecore="http://www.eclipse.org/emf/2002/Ecore"
+                    xmlns:meta="http://www.omg.org/XMI" xmlns:engine="http://www.ibm.com/wbi/2005/eflow"
+                    xmlns:mq="ComIbmMQInput.msgnode" xmlns:util="urn:utility" nsURI="Namespaced.msgflow">
+                  <engine:nodes meta:type="mq:FCMComposite_1" meta:id="Input" queueName="IN">
+                    <util:translation string="Namespaced input"/>
+                    <engine:outTerminals terminalNodeID="out"/>
+                  </engine:nodes>
+                  <engine:nodes meta:type="mq:FCMComposite_1" meta:id="Output"/>
+                  <engine:connections sourceNode="Input" targetNode="Output"
+                    sourceTerminalName="out" targetTerminalName="in"/>
+                </ecore:EPackage>
+                """;
+        var flow = parse(xml);
+        assertEquals("MQInput", flow.node("Input").kind());
+        assertEquals("Namespaced input", flow.node("Input").label());
+        assertEquals("IN", flow.node("Input").properties().get("queueName"));
+        assertEquals(1, flow.connections().size());
+    }
+
+    @Test
+    void rejectsDuplicateNodeIdsAndDanglingConnections() {
+        String duplicate = minimalFlow("<nodes xmi:type=\"mq:FCMComposite_1\" xmi:id=\"same\"/><nodes xmi:type=\"mq:FCMComposite_1\" xmi:id=\"same\"/>", "");
+        assertTrue(assertThrows(IllegalArgumentException.class, () -> parse(duplicate))
+                .getMessage().contains("повторяющийся xmi:id узла"));
+
+        String dangling = minimalFlow("<nodes xmi:type=\"mq:FCMComposite_1\" xmi:id=\"one\"/>",
+                "<connections sourceNode=\"one\" targetNode=\"missing\" sourceTerminalName=\"out\" targetTerminalName=\"in\"/>");
+        assertTrue(assertThrows(IllegalArgumentException.class, () -> parse(dangling))
+                .getMessage().contains("отсутствующий targetNode"));
+    }
+
+    @Test
+    void rejectsDuplicateConnectionIdsAndBlankTerminalReferences() {
+        String duplicate = minimalFlow(
+                "<nodes xmi:type=\"mq:FCMComposite_1\" xmi:id=\"one\"/><nodes xmi:type=\"mq:FCMComposite_1\" xmi:id=\"two\"/>",
+                "<connections xmi:id=\"edge\" sourceNode=\"one\" targetNode=\"two\" sourceTerminalName=\"out\" targetTerminalName=\"in\"/><connections xmi:id=\"edge\" sourceNode=\"one\" targetNode=\"two\" sourceTerminalName=\"out\" targetTerminalName=\"in\"/>");
+        assertTrue(assertThrows(IllegalArgumentException.class, () -> parse(duplicate))
+                .getMessage().contains("повторяющийся xmi:id связи"));
+
+        String blank = minimalFlow("<nodes xmi:type=\"mq:FCMComposite_1\" xmi:id=\"one\"/><nodes xmi:type=\"mq:FCMComposite_1\" xmi:id=\"two\"/>",
+                "<connections sourceNode=\"one\" targetNode=\"two\" sourceTerminalName=\" \" targetTerminalName=\"in\"/>");
+        assertTrue(assertThrows(IllegalArgumentException.class, () -> parse(blank))
+                .getMessage().contains("sourceTerminalName"));
+    }
+
+    @Test
+    void rejectsMalformedXmlAndExternalDtd() {
+        assertThrows(IllegalArgumentException.class, () -> parse("<ecore:EPackage"));
+        String dtd = "<!DOCTYPE ecore:EPackage [<!ENTITY x SYSTEM 'file:///etc/passwd'>]>"
+                + "<ecore:EPackage xmlns:ecore=\"http://www.eclipse.org/emf/2002/Ecore\" nsURI=\"&x;\"/>";
+        assertThrows(IllegalArgumentException.class, () -> parse(dtd));
+    }
+
+    private MsgFlow parse(String xml) {
+        return parser.parse(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    private String readResource(String resource) {
+        try (InputStream in = getClass().getResourceAsStream(resource)) {
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private String minimalFlow(String nodes, String connections) {
+        return """
+                <ecore:EPackage xmlns:ecore="http://www.eclipse.org/emf/2002/Ecore"
+                    xmlns:xmi="http://www.omg.org/XMI" xmlns:mq="ComIbmMQInput.msgnode" nsURI="Test.msgflow">
+                  %s
+                  %s
+                </ecore:EPackage>
+                """.formatted(nodes, connections);
     }
 }

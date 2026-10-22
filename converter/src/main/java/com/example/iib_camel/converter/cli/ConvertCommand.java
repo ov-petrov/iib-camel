@@ -1,7 +1,6 @@
 package com.example.iib_camel.converter.cli;
 
 import com.example.iib_camel.converter.camel.RouteGenerator;
-import com.example.iib_camel.converter.diagram.DiagramNames;
 import com.example.iib_camel.converter.esql.EsqlFunction;
 import com.example.iib_camel.converter.esql.EsqlModule;
 import com.example.iib_camel.converter.esql.EsqlParser;
@@ -21,29 +20,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.stream.Stream;
 
-/**
- * Команда конвертации потоков IIB в маршруты Apache Camel (FR-2.1–FR-2.7, FR-5.1–FR-5.3, FR-7.1).
- *
- * Контракт:
- *   iib-camel-converter convert [--input &lt;файл|.msgflow-каталог&gt;] [--output каталог]
- *
- * По умолчанию: --input ./input, --output ./output (создаётся при отсутствии) —
- * оба пути относительно текущего каталога, из которого вызван jar (FR-7.1).
- *
- * Конвейер (FR-2.1, Must): парсер → генератор маршрутов → вывод + отчёт.
- * Выход: для каждого .msgflow — файл &lt;Имя&gt;-route.xml; единый migration-report.md.
- * Отчёт (FR-5.1) полный: статусы каждой единицы конвертации (узлы msgflow + модули ESQL),
- * статистика по типам узлов и операторам ESQL, пооператорная детализация (FR-5.2),
- * процент полноты автоматизации (FR-5.3). ESQL честно помечается «требует ручной
- * доработки»: перевод ESQL → код пока не автоматизирован (FR-3.2, Should).
- * Коды возврата: 0 — успех, 2 — частичный успех, 3 — ни один файл.
- */
 @Command(name = "convert",
          description = "Конвертация .msgflow (+ESQL) в маршруты Apache Camel с отчётом о миграции.")
 public final class ConvertCommand implements Callable<Integer> {
@@ -59,160 +43,279 @@ public final class ConvertCommand implements Callable<Integer> {
     private final List<String> errors = new ArrayList<>();
     private final List<UnitRow> nodes = new ArrayList<>();
     private final List<EsqlUnit> esqlUnits = new ArrayList<>();
+    private final List<ComputeReference> computeReferences = new ArrayList<>();
     private int convertedFiles;
     private int subflowFiles;
+    private ArtifactOutput artifacts;
+    private final Map<String, String> routeFiles = new LinkedHashMap<>();
 
-    /** Единица «узел msgflow» для отчёта (FR-5.1/5.2). */
     record UnitRow(String flowName, String nodeId, String kind, UnitStatus status, String note) {
     }
 
-    /** Единица «модуль ESQL» для отчёта (FR-3.2): статус перевода + сгенерированный бин. */
-    record EsqlUnit(String file, String module, List<String> functions,
+    record EsqlUnit(String file, String schema, String module, List<String> functions,
                     List<OperatorRow> operators, UnitStatus status, String note,
                     List<String> issues, List<String> models) {
     }
 
-    /** Единица «оператор ESQL» для отчёта: статус перевода и примечание (FR-5.2). */
     record OperatorRow(String module, String function, String esql, UnitStatus status, String note) {
     }
 
+    record ComputeReference(String flowName, String nodeId, String expression) {}
+
+    record SourceFlow(Path file, MsgFlow flow) {}
+    record EsqlJob(Path file, EsqlModule module, EsqlToJavaGenerator.BeanResult bean, String issue) {}
+
     @Override
     public Integer call() {
-        List<Path> flows = collect(".msgflow");
-        List<Path> subflows = collect(".subflow");
+        errors.clear();
+        nodes.clear();
+        esqlUnits.clear();
+        computeReferences.clear();
+        routeFiles.clear();
+        convertedFiles = 0;
+        subflowFiles = 0;
+        artifacts = new ArtifactOutput(output, "convert");
+        List<Path> files = collect(".msgflow");
         List<Path> esqlFiles = collect(".esql");
-        if (flows.isEmpty()) {
+        if (files.isEmpty()) {
             System.err.println("Ошибка: .msgflow-файлы не найдены в " + input);
             return 3;
         }
+        List<SourceFlow> flows = readFlows(files, ".msgflow");
+        List<SourceFlow> subflows = readFlows(collect(".subflow"), ".subflow");
+        subflowFiles = subflows.size();
+        var generator = new EsqlToJavaGenerator();
+        List<EsqlJob> jobs = readEsql(esqlFiles, generator);
+        boolean valid = validateIdentities(flows, subflows, jobs);
+        List<EsqlToJavaGenerator.ModelResult> models = List.of();
         try {
-            Files.createDirectories(output);
-        } catch (IOException e) {
-            System.err.println("Ошибка: cannot create output dir " + output + ": " + e.getMessage());
-            return 3;
+            models = generator.generateModels(jobs.stream().filter(j -> j.bean() != null)
+                    .flatMap(j -> j.bean().statements().stream()).toList());
+        } catch (IllegalArgumentException e) {
+            errors.add("модели: " + e.getMessage());
+            valid = false;
         }
-
-        // Реестр подпотоков (FR-2.2): ссылка в .msgflow резолвится по имени из nsURI
-        // ("Check" для Check.subflow; брокер-схема отбрасывается в генераторе).
-        Map<String, MsgFlow> subflowRegistry = new LinkedHashMap<>();
-        for (Path file : subflows) {
-            try {
-                MsgFlow sub = new MsgFlowParser().parse(Files.newInputStream(file));
-                subflowRegistry.put(sub.name(), sub);
-                subflowRegistry.put(DiagramNames.of(sub.name(), stemOf(file)), sub);
-            } catch (Exception e) {
-                errors.add(file + ": " + e.getMessage());
+        Map<String, MsgFlow> registry = subflowRegistry(subflows);
+        Set<String> emittedSubflows = new LinkedHashSet<>();
+        for (SourceFlow source : flows) {
+            MsgFlow flow = source.flow();
+            collectComputeReferences(flow);
+            if (!valid) {
+                rejectFlow(flow);
+                continue;
             }
-        }
-        subflowFiles = distinctSubflows(subflowRegistry).size();
-
-        for (Path file : flows) {
             try {
-                MsgFlow flow = new MsgFlowParser().parse(Files.newInputStream(file));
-                RouteResult result = new RouteGenerator(flow, subflowRegistry).generate();
-                String routeId = flow.name().replaceAll("\\.msgflow$", "");
-                Path routeFile = output.resolve(routeId + "-route.xml");
-                Files.writeString(routeFile, result.xml(), StandardCharsets.UTF_8);
+                Set<String> pendingSubflows = new LinkedHashSet<>(emittedSubflows);
+                RouteResult result = new RouteGenerator(flow, registry, pendingSubflows).generate();
+                String name = ArtifactOutput.fileStem(baseName(flow.name())) + "-route.xml";
+                artifacts.stage(name, result.xml());
+                routeFiles.put(flow.name(), name);
+                emittedSubflows.addAll(pendingSubflows);
                 convertedFiles++;
-                for (Diagnosis d : result.diagnoses()) {
-                    nodes.add(new UnitRow(flow.name(), d.nodeId(), d.kind(), d.status(), d.note()));
-                }
+                appendDiagnoses(flow, result);
             } catch (Exception e) {
-                errors.add(file + ": " + e.getMessage());
+                errors.add(source.file() + ": " + e.getMessage());
+                rejectFlow(flow);
             }
         }
-
-        // Юниты-подпотоки: диагнозы при разворачивании — обход от Input-узлов
-        // (eflow:FCMSource); отдельного route-файла не создаётся — подпоток вызван
-        // через direct: из родительского маршрута (FR-2.2).
-        for (MsgFlow sub : distinctSubflows(subflowRegistry)) {
-            RouteResult result = new RouteGenerator(sub, subflowRegistry).inlineResult();
-            for (Diagnosis d : result.diagnoses()) {
-                nodes.add(new UnitRow(sub.name(), d.nodeId(), d.kind(), d.status(), d.note()));
+        for (SourceFlow source : subflows) {
+            MsgFlow sub = source.flow();
+            collectComputeReferences(sub);
+            if (!valid) {
+                rejectFlow(sub);
+                continue;
             }
-        }
-
-        // Перевод ESQL → Java-бины (FR-3.2): модуль → beans/<Class>.java (исходник без компиляции),
-        // честные статусы: все операторы переведены → конвертировано; часть → частично (FR-3.3);
-        // ни одного/нет Main → требует ручной доработки. Ничего не теряется молча (FR-5.1–5.3).
-        EsqlToJavaGenerator generator = new EsqlToJavaGenerator();
-        Path beansDir = output.resolve("beans");
-        for (Path file : esqlFiles) {
             try {
-                List<EsqlModule> modules = new EsqlParser()
-                        .parseAll(Files.readString(file, StandardCharsets.UTF_8));
-                for (EsqlModule m : modules) {
-                    List<OperatorRow> operators = new ArrayList<>();
-                    UnitStatus unitStatus = UnitStatus.MANUAL;
-                    String unitNote = "перевод не выполнен";
-                    List<String> issues = List.of();
-                    EsqlToJavaGenerator.BeanResult bean = null;
-                    try {
-                        bean = generator.generate(m);
-                        issues = List.copyOf(bean.issues());
-                        Files.createDirectories(beansDir);
-                        Files.writeString(beansDir.resolve(bean.className() + ".java"),
-                                bean.java(), StandardCharsets.UTF_8);
-                        // POJO-модели тела (FR-3.4, первый уровень) — соседний каталог models/
-                        for (EsqlToJavaGenerator.ModelResult model : bean.models()) {
-                            Files.createDirectories(output.resolve("models"));
-                            Files.writeString(
-                                    output.resolve("models").resolve(model.className() + ".java"),
-                                    model.java(), StandardCharsets.UTF_8);
-                        }
-                        for (EsqlTranslator.StatementTranslation st : bean.statements()) {
-                            operators.add(new OperatorRow(
-                                    m.name(), "Main", st.esql(), st.status(), st.note()));
-                        }
-                        long convertedOps = bean.statements().stream()
-                                .filter(st -> st.status() == UnitStatus.CONVERTED).count();
-                        if (bean.complete()) {
-                            unitStatus = UnitStatus.CONVERTED;
-                            unitNote = "бин `" + bean.beanId() + "` → `beans/"
-                                    + bean.className() + ".java`";
-                        } else if (convertedOps > 0) {
-                            unitStatus = UnitStatus.PARTIAL;
-                            unitNote = "частично (" + convertedOps + " из " + bean.statements().size()
-                                    + " операторов) — бин `beans/" + bean.className() + ".java`";
-                        } else {
-                            unitStatus = UnitStatus.MANUAL;
-                            unitNote = "операторы вне переводимого подмножества: "
-                                    + bean.issues().get(0);
-                        }
-                    } catch (IllegalArgumentException e) {
-                        unitStatus = UnitStatus.MANUAL;
-                        unitNote = e.getMessage();
-                    }
-                    esqlUnits.add(new EsqlUnit(file.getFileName().toString(), m.name(),
-                            m.functions().stream().map(EsqlFunction::name).toList(),
-                            List.copyOf(operators), unitStatus, unitNote, issues,
-                            bean == null ? List.of()
-                                    : bean.models().stream().map(x -> "models/" + x.className() + ".java")
-                                            .toList()));
-                }
+                appendDiagnoses(sub, new RouteGenerator(sub, registry).inlineResult());
             } catch (Exception e) {
-                errors.add(file + ": " + e.getMessage());
+                errors.add(source.file() + ": " + e.getMessage());
+                rejectFlow(sub);
             }
         }
-
+        for (EsqlJob job : jobs) appendEsql(job, valid);
+        if (valid) {
+            for (var model : models) artifacts.stage("models/" + model.className() + ".java", model.java());
+        }
+        validateComputeReferences();
         writeReport();
-        printSummary(flows.size(), esqlFiles.size());
-
-        if (errors.size() == flows.size()) {
+        try {
+            artifacts.publish();
+        } catch (IOException | IllegalArgumentException e) {
+            errors.add("вывод не опубликован: " + e.getMessage());
+            System.err.println(errors.getLast());
+            printSummary(files.size(), esqlFiles.size());
             return 3;
         }
-        return errors.isEmpty() ? 0 : 2;
+        printSummary(files.size(), esqlFiles.size());
+        return convertedFiles == 0 ? 3 : errors.isEmpty() ? 0 : 2;
     }
 
-    /** Реестр содержит два ключа на файл (полное имя и короткое) — уникализуем по порядку вставки. */
-    private static List<MsgFlow> distinctSubflows(Map<String, MsgFlow> registry) {
-        List<MsgFlow> unique = new ArrayList<>();
-        for (MsgFlow sub : registry.values()) {
-            if (unique.stream().noneMatch(s -> s == sub || s.name().equals(sub.name()))) {
-                unique.add(sub);
+    private List<SourceFlow> readFlows(List<Path> files, String extension) {
+        var result = new ArrayList<SourceFlow>();
+        for (Path file : files) {
+            try (var in = Files.newInputStream(file)) {
+                MsgFlow flow = new MsgFlowParser().parse(in);
+                if (flow.name().isBlank()) flow = new MsgFlow(stemOf(file) + extension, flow.nodes(), flow.connections());
+                result.add(new SourceFlow(file, flow));
+            } catch (Exception e) { errors.add(file + ": " + e.getMessage()); }
+        }
+        return result;
+    }
+
+    private List<EsqlJob> readEsql(List<Path> files, EsqlToJavaGenerator generator) {
+        var result = new ArrayList<EsqlJob>();
+        for (Path file : files) {
+            try {
+                for (EsqlModule module : new EsqlParser().parseAll(Files.readString(file))) {
+                    try { result.add(new EsqlJob(file, module, generator.generate(module), null)); }
+                    catch (IllegalArgumentException e) { result.add(new EsqlJob(file, module, null, e.getMessage())); }
+                }
+            } catch (Exception e) { errors.add(file + ": " + e.getMessage()); }
+        }
+        return result;
+    }
+
+    private boolean validateIdentities(List<SourceFlow> flows, List<SourceFlow> subs, List<EsqlJob> jobs) {
+        int before = errors.size();
+        Map<String, String> ids = new LinkedHashMap<>();
+        Map<String, String> names = new LinkedHashMap<>();
+        for (SourceFlow source : flows) {
+            String base = baseName(source.flow().name());
+            try {
+                reserve(names, ArtifactOutput.fileStem(base).toLowerCase(Locale.ROOT) + "-route.xml", source.file().toString());
+            } catch (IllegalArgumentException e) { errors.add(source.file() + ": " + e.getMessage()); }
+            var inputs = source.flow().nodes().stream().filter(n -> n.kind().equals("MQInput")).toList();
+            for (var node : inputs) reserve(ids, inputs.size() == 1 ? base : base + "-" + node.id(), source.file().toString());
+        }
+        for (SourceFlow source : subs) {
+            String base = baseName(source.flow().name());
+            try { ArtifactOutput.fileStem(base); }
+            catch (IllegalArgumentException e) { errors.add(source.file() + ": " + e.getMessage()); }
+            reserve(ids, base, source.file().toString());
+        }
+        java.util.stream.Stream.concat(flows.stream(), subs.stream()).forEach(source -> {
+            for (var node : source.flow().nodes()) {
+                if (!node.kind().equals("Subflow")) continue;
+                String requested = baseName(node.properties().getOrDefault("subflowName", ""));
+                List<Path> candidates = subs.stream().filter(sub -> baseName(sub.flow().name()).equals(requested)
+                                || stemOf(sub.file()).equals(requested))
+                        .map(SourceFlow::file).distinct().toList();
+                if (candidates.size() > 1) errors.add(source.file() + ": неоднозначная ссылка на подпоток "
+                        + requested + " у узла " + node.id() + ": " + candidates);
+            }
+        });
+        Map<String, String> beans = new LinkedHashMap<>();
+        int index = 0;
+        for (EsqlJob job : jobs) {
+            if (job.bean() != null) {
+                String owner = job.file() + "#" + job.module().schema() + "." + job.module().name() + "@" + index;
+                reserve(beans, job.bean().beanId(), owner);
+                reserve(names, "beans/" + job.bean().className().toLowerCase(Locale.ROOT) + ".java", owner);
+            }
+            index++;
+        }
+        return errors.size() == before;
+    }
+
+    private void reserve(Map<String, String> used, String id, String owner) {
+        String previous = used.putIfAbsent(id, owner);
+        if (previous != null) errors.add("конфликт идентификатора " + id + ": " + previous + " и " + owner);
+    }
+
+    private static String baseName(String name) {
+        return name.replaceFirst("(?i)\\.(msgflow|subflow)$", "");
+    }
+
+    private static Map<String, MsgFlow> subflowRegistry(List<SourceFlow> sources) {
+        Map<String, MsgFlow> registry = new LinkedHashMap<>();
+        Map<String, List<MsgFlow>> aliases = new LinkedHashMap<>();
+        for (SourceFlow source : sources) {
+            registry.put(source.flow().name(), source.flow());
+            registry.put(baseName(source.flow().name()), source.flow());
+            aliases.computeIfAbsent(stemOf(source.file()), k -> new ArrayList<>()).add(source.flow());
+        }
+        aliases.forEach((alias, candidates) -> {
+            if (candidates.size() == 1) registry.putIfAbsent(alias, candidates.getFirst());
+        });
+        return registry;
+    }
+
+    private void appendDiagnoses(MsgFlow flow, RouteResult result) {
+        result.diagnoses().forEach(d -> nodes.add(new UnitRow(flow.name(), d.nodeId(), d.kind(), d.status(), d.note())));
+        result.diagnoses().stream().filter(d -> d.note().startsWith("граф не преобразован:"))
+                .map(d -> flow.name() + ": " + d.note()).distinct().forEach(errors::add);
+    }
+
+    private void rejectFlow(MsgFlow flow) {
+        flow.nodes().forEach(n -> nodes.add(new UnitRow(flow.name(), n.id(), n.kind(), UnitStatus.MANUAL,
+                "артефакт не сформирован: см. ошибки пакета")));
+    }
+
+    private void appendEsql(EsqlJob job, boolean valid) {
+        var bean = job.bean();
+        var operators = new ArrayList<OperatorRow>();
+        UnitStatus status = UnitStatus.MANUAL;
+        String note = job.issue();
+        List<String> issues = bean == null ? List.of() : bean.issues();
+        if (bean != null) {
+            for (var statement : bean.statements()) operators.add(new OperatorRow(job.module().name(), "Main",
+                    statement.esql(), statement.status(), statement.note()));
+            if (valid) {
+                artifacts.stage("beans/" + bean.className() + ".java", bean.java());
+                long converted = bean.statements().stream().filter(s -> s.status() == UnitStatus.CONVERTED).count();
+                status = bean.complete() ? UnitStatus.CONVERTED : converted > 0 ? UnitStatus.PARTIAL : UnitStatus.MANUAL;
+                note = bean.complete() ? "бин `" + bean.beanId() + "` → `beans/" + bean.className() + ".java`"
+                        : "перевод неполный — бин `beans/" + bean.className() + ".java` блокирует исполнение";
+            } else note = "артефакт не сформирован: конфликт выходных имён/моделей";
+        }
+        esqlUnits.add(new EsqlUnit(job.file().getFileName().toString(), job.module().schema(), job.module().name(),
+                job.module().functions().stream().map(EsqlFunction::name).toList(), List.copyOf(operators), status,
+                note, issues, bean == null || !valid ? List.of() : bean.models().stream().map(m -> "models/" + m.className() + ".java").toList()));
+    }
+
+    private void collectComputeReferences(MsgFlow flow) {
+        flow.nodes().stream().filter(n -> n.kind().equals("Compute"))
+                .forEach(n -> computeReferences.add(new ComputeReference(flow.name(), n.id(),
+                        n.properties().getOrDefault("computeExpression", ""))));
+    }
+
+    private void validateComputeReferences() {
+        for (ComputeReference reference : computeReferences) {
+            String expression = reference.expression();
+            int hash = expression.indexOf('#');
+            UnitStatus status = UnitStatus.MANUAL;
+            String note = "неразрешённая Compute-ссылка: " + expression;
+            if (hash >= 0) {
+                String routine = expression.substring(hash + 1);
+                int dot = routine.indexOf('.');
+                String module = dot < 0 ? routine : routine.substring(0, dot);
+                String function = dot < 0 ? "Main" : routine.substring(dot + 1);
+                String schema = expression.substring(0, hash).replaceFirst("^esql://routine/", "");
+                List<EsqlUnit> matches = esqlUnits.stream()
+                        .filter(u -> u.module().equals(module))
+                        .filter(u -> schema.isBlank() || u.schema().equals(schema))
+                        .toList();
+                if (matches.size() == 1 && function.equalsIgnoreCase("Main")) {
+                    EsqlUnit unit = matches.getFirst();
+                    status = unit.status();
+                    note = status == UnitStatus.CONVERTED ? null
+                            : "Compute-модуль не готов к исполнению: " + unit.note();
+                } else if (matches.size() > 1) {
+                    note = "неоднозначная Compute-ссылка: " + expression;
+                } else if (!function.equalsIgnoreCase("Main")) {
+                    note = "Compute-функция не поддерживается: " + function;
+                }
+            }
+            if (note != null) {
+                for (int i = 0; i < nodes.size(); i++) {
+                    UnitRow row = nodes.get(i);
+                    if (row.flowName().equals(reference.flowName()) && row.nodeId().equals(reference.nodeId())) {
+                        nodes.set(i, new UnitRow(row.flowName(), row.nodeId(), row.kind(),
+                                UnitStatus.worst(row.status(), status), row.note() + "; " + note));
+                    }
+                }
             }
         }
-        return unique;
     }
 
     private static String stemOf(Path file) {
@@ -221,7 +324,6 @@ public final class ConvertCommand implements Callable<Integer> {
         return dot <= 0 ? name : name.substring(0, dot);
     }
 
-    /** Формирует migration-report.md: полный отчёт FR-5.1 со статами FR-5.2/5.3. */
     private void writeReport() {
         var report = new StringBuilder();
         report.append("# Отчёт о миграции\n\n");
@@ -229,7 +331,7 @@ public final class ConvertCommand implements Callable<Integer> {
                 .append(input).append("`.\n\n");
         report.append("""
                 Единицы конвертации: узлы `.msgflow` + подпотоки + модули ESQL. Статусы (FR-5.1):
-                `конвертировано` — правило применено полностью; `частично` — элемент создан с TODO-заглушкой
+                `конвертировано` — правило применено полностью; `частично` — элемент требует доработки; неполный ESQL-бин блокирует исполнение
                 (непереводимые операторы ESQL, нет свойства, узел не подключён к маршруту); `требует
                 ручной доработки` — автоматизация не предусмотрена; `не поддерживается` — правила
                 конвертации нет, создана TODO-заглушка (FR-2.7).
@@ -242,15 +344,9 @@ public final class ConvertCommand implements Callable<Integer> {
         appendErrors(report);
         appendTotals(report);
 
-        try {
-            Files.writeString(output.resolve("migration-report.md"), report.toString(),
-                    StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            errors.add(output.resolve("migration-report.md") + ": " + e.getMessage());
-        }
+        artifacts.stage("migration-report.md", report.toString());
     }
 
-    /** Сводка статусов по всем единицам (узлы + модули ESQL) — FR-5.1. */
     private void appendUnitStats(StringBuilder report) {
         Map<UnitStatus, Integer> counts = countByStatus();
         long total = totalUnits();
@@ -263,16 +359,14 @@ public final class ConvertCommand implements Callable<Integer> {
         report.append("| **Всего** | ").append(total).append(" | 100.0 |\n\n");
     }
 
-    /** Таблица потоков: результат + статистика узлов по статусам. */
     private void appendFlowTable(StringBuilder report) {
         report.append("## Потоки\n\n| Поток | Результат | Узлов | Конв. | Част. | Руч. | Не под. |\n|---|---|---|---|---|---|---|\n");
         List<String> flowNames = nodes.stream().map(UnitRow::flowName).distinct().toList();
         for (String name : flowNames) {
-            // маршрут есть только у .msgflow; подпотоки вызываются direct: из родительского
             boolean isSubflow = name.endsWith(".subflow");
             String link = isSubflow
                     ? "direct: (вызов из родительского маршрута)"
-                    : "[`" + name.replace(".msgflow", "") + "-route.xml`](" + name.replace(".msgflow", "") + "-route.xml)";
+                    : routeFiles.containsKey(name) ? "[`" + routeFiles.get(name) + "`](" + routeFiles.get(name) + ")" : "не сформирован";
             Map<UnitStatus, Long> by = new LinkedHashMap<>();
             long nodeTotal = 0;
             for (UnitStatus status : UnitStatus.values()) {
@@ -295,7 +389,6 @@ public final class ConvertCommand implements Callable<Integer> {
         report.append("\n");
     }
 
-    /** Статистика по типам узлов (FR-5.1: «количеству узлов/операторов каждого типа»). */
     private void appendKindStats(StringBuilder report) {
         List<String> kinds = nodes.stream().map(UnitRow::kind).distinct().sorted().toList();
         report.append("## Узлы по типам\n\n| Тип узла | Всего | Конв. | Част. | Не под. |\n|---|---|---|---|---|\n");
@@ -309,7 +402,6 @@ public final class ConvertCommand implements Callable<Integer> {
         report.append("\n");
     }
 
-    /** Пооператорная детализация узлов: id, тип, статус, цель/причина (FR-5.2). */
     private void appendNodeDetails(StringBuilder report) {
         report.append("## Детализация узлов\n\n");
         for (String name : nodes.stream().map(UnitRow::flowName).distinct().toList()) {
@@ -323,7 +415,6 @@ public final class ConvertCommand implements Callable<Integer> {
         }
     }
 
-    /** Модули ESQL: статус автоматического перевода (FR-3.2) + пооператорный разбор (FR-5.2). */
     private void appendEsqlDetails(StringBuilder report) {
         if (esqlUnits.isEmpty()) {
             return;
@@ -372,7 +463,6 @@ public final class ConvertCommand implements Callable<Integer> {
         report.append("\n");
     }
 
-    /** Сводка: файлы, единицы по статусам, процент полноты автоматизации (FR-5.3). */
     private void appendTotals(StringBuilder report) {
         Map<UnitStatus, Integer> counts = countByStatus();
         long total = totalUnits();
@@ -439,7 +529,8 @@ public final class ConvertCommand implements Callable<Integer> {
 
     private List<Path> collect(String extension) {
         try (Stream<Path> walk = Files.walk(input)) {
-            return walk.filter(p -> p.getFileName().toString().endsWith(extension))
+            return walk.filter(Files::isRegularFile)
+                    .filter(p -> p.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(extension))
                     .sorted()
                     .toList();
         } catch (IOException e) {

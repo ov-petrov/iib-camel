@@ -97,8 +97,10 @@ Detailed requirements are described in [Functional requirements](docs/functional
 
 ## Project status
 
-🚧 The project is at an early stage. Repository structure is set up (multi-module Maven: `converter` + `runtime`),
-requirements (MoSCoW) and the testing strategy are fixed; converter implementation is starting.
+The prototype analyzes flows, translates a bounded ESQL subset, and generates Camel XML routes.
+The baseline XML conversion blockers are fixed and checked against freshly generated artifacts.
+Incomplete ESQL beans fail before executing business operations. See
+[implementation progress (RU)](docs/implementation-progress.ru.md) for scope and remaining work.
 
 ## Documentation
 

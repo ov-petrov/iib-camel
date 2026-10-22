@@ -14,21 +14,21 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * Парсер .msgflow (формат Eclipse EMF/XMI, namespace eflow) в промежуточную модель IR.
- * FR-1.1, FR-1.3, FR-1.4 из docs/functional-requirements.ru.md.
- */
 public final class MsgFlowParser {
 
     private static final String ECORE_NS = "http://www.eclipse.org/emf/2002/Ecore";
-    /** Шумовые атрибуты фигур (позиции на канве) — в модель не включаются. */
-    private static final Set<String> SKIPPED_ATTRS = Set.of("xmi:type", "xmi:id", "location");
+    private static final String XMI_NS = "http://www.omg.org/XMI";
+    private static final String EFLOW_NS = "http://www.ibm.com/wbi/2005/eflow";
+    private static final Set<String> SKIPPED_ATTRS = Set.of("location");
 
     public MsgFlow parse(InputStream input) {
         try {
             var dbf = DocumentBuilderFactory.newInstance();
             dbf.setNamespaceAware(true);
             dbf.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             Document doc = dbf.newDocumentBuilder().parse(input);
             return fromDocument(doc);
         } catch (IllegalArgumentException e) {
@@ -48,67 +48,96 @@ public final class MsgFlowParser {
         String name = root.getAttribute("nsURI");
 
         List<FlowNode> nodes = new ArrayList<>();
-        var nodeElements = doc.getElementsByTagName("nodes");
+        var nodeElements = doc.getElementsByTagNameNS("*", "nodes");
         for (int i = 0; i < nodeElements.getLength(); i++) {
             nodes.add(node((Element) nodeElements.item(i)));
         }
 
         List<FlowConnection> connections = new ArrayList<>();
-        var connectionElements = doc.getElementsByTagName("connections");
-        for (int i = 0; i < connectionElements.getLength(); i++) {
-            connections.add(connection((Element) connectionElements.item(i)));
+        var connectionElements = doc.getElementsByTagNameNS("*", "connections");
+        Set<String> ids = new java.util.HashSet<>();
+        for (FlowNode node : nodes) {
+            ids.add(node.id());
         }
+        for (int i = 0; i < connectionElements.getLength(); i++) {
+            Element element = (Element) connectionElements.item(i);
+            String id = xmiAttribute(element, "id");
+            if (!id.isBlank() && !ids.add(id)) {
+                throw new IllegalArgumentException("повторяющийся xmi:id связи: " + id);
+            }
+            connections.add(connection(element));
+        }
+        validateGraph(nodes, connections);
         return new MsgFlow(name, nodes, connections);
     }
 
     private FlowNode node(Element el) {
-        String xmiType = el.getAttribute("xmi:type");
+        String xmiType = xmiAttribute(el, "type");
         if (xmiType.isBlank()) {
-            throw new IllegalArgumentException("узел без xmi:type (id=" + el.getAttribute("xmi:id") + ")");
+            throw new IllegalArgumentException("узел без xmi:type (id=" + xmiAttribute(el, "id") + ")");
         }
-        String id = requireAttr(el, "xmi:id");
-        String kind = nodeKind(xmiType);
+        String id = requiredXmiAttr(el, "id");
+        String kind = nodeKind(el, xmiType);
         Map<String, String> properties = new LinkedHashMap<>();
         var attrs = el.getAttributes();
         for (int i = 0; i < attrs.getLength(); i++) {
             attr(properties, attrs.item(i));
         }
-        // узел-ссылка на подпоток: цель берём из xmi:type (канон ACE: "<Имя>.subflow:FCMComposite_1") —
-        // реальные .msgflow не хранят имя файла подпотока в отдельном атрибуте узла (A4)
         if ("Subflow".equals(kind)) {
-            properties.put("subflowName", subflowTarget(xmiType));
+            properties.put("subflowName", subflowTarget(el, xmiType));
         }
 
         List<String> dynamicTerminals = new ArrayList<>();
+        List<RouteRule> routeRules = new ArrayList<>();
         String label = null;
         var children = el.getChildNodes();
         for (int i = 0; i < children.getLength(); i++) {
             if (!(children.item(i) instanceof Element child)) {
                 continue;
             }
-            switch (child.getTagName()) {
+            switch (localName(child)) {
                 case "translation" -> label = child.getAttribute("string");
-                case "outTerminals" -> dynamicTerminals.add(child.getAttribute("terminalNodeID"));
-                // вложенные таблицы правил (filterTable у Route и т.п.) поднимаем в свойства узла
+                case "outTerminals" -> {
+                    String terminal = child.getAttribute("terminalNodeID");
+                    if (terminal.isBlank()) {
+                        throw new IllegalArgumentException("пустой terminalNodeID у узла " + id);
+                    }
+                    dynamicTerminals.add(terminal);
+                }
+                case "filterTable" -> {
+                    String terminal = child.getAttribute("routingOutputTerminal");
+                    if (terminal.isBlank()) {
+                        throw new IllegalArgumentException("пустой routingOutputTerminal у узла " + id);
+                    }
+                    routeRules.add(new RouteRule(child.getAttribute("filterPattern"), terminal));
+                    var childAttrs = child.getAttributes();
+                    for (int a = 0; a < childAttrs.getLength(); a++) {
+                        Node attr = childAttrs.item(a);
+                        properties.putIfAbsent("filterTable." + attr.getNodeName(), attr.getNodeValue());
+                    }
+                }
                 default -> {
                     var childAttrs = child.getAttributes();
                     for (int a = 0; a < childAttrs.getLength(); a++) {
                         Node attr = childAttrs.item(a);
-                        String key = child.getTagName() + "." + attr.getNodeName();
+                        String key = localName(child) + "." + attr.getNodeName();
                         properties.put(key, attr.getNodeValue());
                     }
                 }
             }
         }
         if (label == null) {
-            label = el.getAttribute("xmi:id");
+            label = id;
         }
-        return new FlowNode(id, kind, label, properties, dynamicTerminals);
+        return new FlowNode(id, kind, label, properties, dynamicTerminals, routeRules);
     }
 
     private void attr(Map<String, String> properties, Node attr) {
         String name = attr.getNodeName();
         if (SKIPPED_ATTRS.contains(name)) {
+            return;
+        }
+        if (XMI_NS.equals(attr.getNamespaceURI()) && Set.of("id", "type").contains(localName(attr))) {
             return;
         }
         properties.put(name, attr.getNodeValue());
@@ -125,7 +154,10 @@ public final class MsgFlowParser {
     private String terminal(String raw) {
         int dot = raw.indexOf('.');
         if (raw.startsWith("OutTerminal.") || raw.startsWith("InTerminal.")) {
-            return raw.substring(dot + 1);
+            raw = raw.substring(dot + 1);
+        }
+        if (raw.isBlank()) {
+            throw new IllegalArgumentException("пустая ссылка на терминал в связи");
         }
         return raw;
     }
@@ -134,18 +166,98 @@ public final class MsgFlowParser {
         String value = el.getAttribute(name);
         if (value.isBlank()) {
             throw new IllegalArgumentException("отсутствует обязательный атрибут \"" + name
-                    + "\" у элемента " + el.getTagName());
+                    + "\" у элемента " + localName(el));
         }
         return value;
     }
 
-    /**
-     * Канон типов узлов — ot4i/ace-bob, skills/shared/node-types.md:
-     * ComIbm*.msgnode — built-in узлы; "&lt;Имя&gt;.subflow:FCMComposite_1" — узел-ссылка
-     * на подпоток (брокер-схема, если есть, присоединена подчёркиванием: "Схема_Имя.subflow");
-     * eflow:FCMSource — Input-узел подпотока (терминал In узла-ссылки);
-     * eflow:FCMSink — Output-узел подпотока (терминал Out).
-     */
+    private String requiredXmiAttr(Element el, String local) {
+        String value = xmiAttribute(el, local);
+        if (value.isBlank()) {
+            throw new IllegalArgumentException("отсутствует обязательный атрибут \"xmi:" + local
+                    + "\" у элемента " + localName(el));
+        }
+        return value;
+    }
+
+    private String xmiAttribute(Element el, String local) {
+        var attrs = el.getAttributes();
+        for (int i = 0; i < attrs.getLength(); i++) {
+            Node attr = attrs.item(i);
+            if (XMI_NS.equals(attr.getNamespaceURI()) && local.equals(localName(attr))) {
+                return attr.getNodeValue();
+            }
+        }
+        return "";
+    }
+
+    private String nodeKind(Element element, String xmiType) {
+        String namespace = typeNamespace(element, xmiType);
+        String local = typeLocalName(xmiType);
+        if (namespace.endsWith(".subflow")) {
+            return "Subflow";
+        }
+        if (EFLOW_NS.equals(namespace)) {
+            return switch (local) {
+                case "FCMSource" -> "Input";
+                case "FCMSink" -> "Output";
+                default -> xmiType;
+            };
+        }
+        if (namespace.endsWith(".msgnode")) {
+            String body = namespace.substring(0, namespace.length() - ".msgnode".length());
+            return body.startsWith("ComIbm") ? body.substring("ComIbm".length()) : body;
+        }
+        return namespace.isEmpty() ? local : namespace;
+    }
+
+    private String subflowTarget(Element element, String xmiType) {
+        String namespace = typeNamespace(element, xmiType);
+        return namespace.endsWith(".subflow")
+                ? namespace.substring(0, namespace.length() - ".subflow".length())
+                : subflowTarget(xmiType);
+    }
+
+    private String typeNamespace(Element element, String xmiType) {
+        int colon = xmiType.indexOf(':');
+        if (colon < 0) {
+            return element.lookupNamespaceURI(null) == null ? "" : element.lookupNamespaceURI(null);
+        }
+        String namespace = element.lookupNamespaceURI(xmiType.substring(0, colon));
+        return namespace == null ? "" : namespace;
+    }
+
+    private String typeLocalName(String xmiType) {
+        int colon = xmiType.indexOf(':');
+        return colon < 0 ? xmiType : xmiType.substring(colon + 1);
+    }
+
+    private void validateGraph(List<FlowNode> nodes, List<FlowConnection> connections) {
+        Set<String> nodeIds = new java.util.HashSet<>();
+        for (FlowNode node : nodes) {
+            if (node.id().isBlank()) {
+                throw new IllegalArgumentException("обнаружен узел с пустым xmi:id");
+            }
+            if (!nodeIds.add(node.id())) {
+                throw new IllegalArgumentException("повторяющийся xmi:id узла: " + node.id());
+            }
+        }
+        for (FlowConnection connection : connections) {
+            if (!nodeIds.contains(connection.sourceNodeId())) {
+                throw new IllegalArgumentException("связь ссылается на отсутствующий sourceNode: "
+                        + connection.sourceNodeId());
+            }
+            if (!nodeIds.contains(connection.targetNodeId())) {
+                throw new IllegalArgumentException("связь ссылается на отсутствующий targetNode: "
+                        + connection.targetNodeId());
+            }
+        }
+    }
+
+    private String localName(Node node) {
+        return node.getLocalName() == null ? node.getNodeName() : node.getLocalName();
+    }
+
     static String nodeKind(String xmiType) {
         int colon = xmiType.indexOf(':');
         String prefix = colon < 0 ? xmiType : xmiType.substring(0, colon);
@@ -157,7 +269,7 @@ public final class MsgFlowParser {
             return switch (local) {
                 case "FCMSource" -> "Input";
                 case "FCMSink" -> "Output";
-                default -> xmiType; // прочие служебные eflow-типы: как есть, диагностика справится
+                default -> xmiType;
             };
         }
         if (prefix.endsWith(".msgnode")) {
@@ -167,12 +279,6 @@ public final class MsgFlowParser {
         return prefix;
     }
 
-    /**
-     * Имя файла подпотока из канонического xmi:type узла-ссылки:
-     * "Check.subflow:FCMComposite_1" → "Check"; "Schema_Check.subflow:FCMComposite_1" →
-     * "Schema_Check" (брокер-схема сохраняется — резолвер сопоставит по полному имени,
-     * см. RouteGenerator: ключи реестра подпотоков включают и полное, и короткое имя).
-     */
     static String subflowTarget(String xmiType) {
         int colon = xmiType.indexOf(':');
         String prefix = colon < 0 ? xmiType : xmiType.substring(0, colon);

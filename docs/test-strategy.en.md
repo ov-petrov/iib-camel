@@ -4,6 +4,8 @@
 
 > Functional requirements: [functional-requirements.en.md](functional-requirements.en.md)
 
+For implemented checks and the first iteration results, see [implementation progress (RU)](implementation-progress.ru.md). Fresh generation, compilation and runtime checks now run during `mvn verify`; graph equivalence and the full behavioral oracle described below remain planned.
+
 ## 1. Purpose and principles
 
 Testing must prove that:

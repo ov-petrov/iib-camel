@@ -9,10 +9,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Тесты генератора бинов (FR-3.2): контракт bean-ссылок маршрутов
- * (beanId = camelize(модуль), метод compute(Exchange)), детерминизм, TODO-заглушки.
- */
 class EsqlToJavaGeneratorTest {
 
     @Test
@@ -33,7 +29,7 @@ class EsqlToJavaGeneratorTest {
                 "бин наследует базовый класс с protected-поддержкой");
         assertTrue(java.contains("protected void main(Exchange exchange)"),
                 "точка входа — аналог ESQL Main (шлюз compute() в базовом классе)");
-        // операторы с трассируемым оригиналом (protected-методы базового класса)
+
         assertTrue(java.contains("// SET OutputRoot = InputRoot;\n        copy(exchange);"));
         assertTrue(java.contains(
                 "// SET OutputRoot.MQMD.CommentField = 'CHECKED-BY-SUBFLOW';\n"
@@ -70,8 +66,9 @@ class EsqlToJavaGeneratorTest {
         assertFalse(bean.complete(), "IF → статус «частично»");
         assertTrue(bean.java().contains("// TODO (FR-3.3): IF InputBody.Order.Status"),
                 "TODO-заглушка с причиной внутри compute()");
-        assertTrue(bean.java().contains("ВНИМАНИЕ"),
-                "javadoc предупреждает о ручной доработке");
+        assertTrue(bean.java().contains("throw new UnsupportedOperationException"),
+                "неполный перевод отказывается от исполнения");
+        assertFalse(bean.java().contains("\n        copy(exchange);"));
     }
 
     @Test

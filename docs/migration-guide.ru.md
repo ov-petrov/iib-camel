@@ -152,6 +152,12 @@ java -jar converter/target/converter.jar \
 | `--input`, `-i` | файл или каталог | `.msgflow`-файл(ы); каталог обходится рекурсивно |
 | `--output`, `-o` | каталог | результат; по умолчанию `converted` |
 
+Повторный запуск в том же output использует `.iib-camel-convert.tsv` с контрольными
+суммами. Изменённые вручную и посторонние файлы не перезаписываются; старые неизменённые
+generated-артефакты удаляются, если больше не входят в результат. Для старого вывода без
+manifest безопаснее выбрать новый каталог. При коллизиях имён сначала исправьте ошибки
+из отчёта: пакет маршрутов/классов не публикуется.
+
 Результат:
 
 ```text
@@ -174,7 +180,7 @@ converted/
       <!-- source: узел RouteByStatus (Route) -->
       <choice>
         <when>
-          <simple>${body.order.status} == 'HIGH'</simple>
+          <xpath>/Adapter/Order/status='HIGH'</xpath>
           <!-- source: узел PriorityQueue (MQOutput) -->
           <to uri="jms:ADAPTER.PRIORITY.Q"/>
         </when>
@@ -208,7 +214,7 @@ converted/
 |---|---|
 | `MQInput` | `<from uri="jms:<queueName>"/>` |
 | `Compute` | `<to uri="bean:<имя_бинa>"/>` — идентификатор берётся из `esql://routine/#Module` |
-| `Route` (filterTable) | `<choice><when><simple>…'; filterPattern → навигация POJO-свойства (FR-3.2)</simple><to .../></when><otherwise><to .../></otherwise></choice>` |
+| `Route` (filterTable) | XPath по XML-телу; `First` → choice, `All` → последовательные ветви с копиями исходного сообщения; порядок строк сохранён; failure отделён от ошибки downstream |
 | `MQOutput` | `<to uri="jms:<queueName>"/>` |
 | терминал `catch`/`failure` | `<doCatch>` → в очередь обработки ошибок (FR-2.3) |
 | прочие (не поддержано) | TODO-заглушка `<log message="Unsupported IIB node: …"/>` (FR-2.7) + отметка в отчёте |
@@ -225,8 +231,8 @@ converted/
 * **Узлы по типам** — сколько узлов каждого типа, и в каком они статусе;
 * **Детализация узлов** — по каждому узлу: id, тип, статус и примечание (цель элемента
   Camel или причина TODO — нет очереди, нет фильтра, узел вне пути, заглушка);
-* **ESQL** — модули и каждый оператор `SET` со статусом `требует ручной доработки`
-  (перевод ESQL → Java не автоматизирован, FR-3.2);
+* **ESQL** — модули, переведённые SET и полные неподдерживаемые фрагменты;
+  неполный бин останавливается до выполнения бизнес-операций;
 * **Ошибки** — файлы, которые не удалось разобрать;
 * **Сводка** — количество файлов и единиц, процент полноты автоматизации (FR-5.3).
 
@@ -237,8 +243,8 @@ converted/
 
 | Статус | Единиц | % |
 |---|---|---|
-| конвертировано | 6 | 85.7 |
-| требует ручной доработки | 1 | 14.3 |
+| конвертировано | 7 | 100.0 |
+| требует ручной доработки | 0 | 0.0 |
 | **Всего** | 7 | 100.0 |
 
 ## Потоки
@@ -249,7 +255,7 @@ converted/
 
 ## Сводка
 - Файлов msgflow: 1 (конвертировано 1, с ошибками разбора 0)
-- Требуют внимания: 1 из 7 единиц; полнота автоматизации: 85.7% конвертировано (FR-5.3)
+- Требуют внимания: 0 из 7 единиц; полнота автоматизации: 100.0% конвертировано (FR-5.3)
 ```
 
 Решение после того как просмотрели отчёт:
@@ -257,7 +263,7 @@ converted/
 * «Требуют внимания: 0» → переходите к шагу 6 (деплой маршрута в runtime);
 * значения > 0 → смотрите разделы «Детализация узлов» и «Операторы ESQL»:
   там перечислены конкретные узлы/операторы со статусами
-  `частично` (годится для запуска, но есть TODO в маршруте),
+  `частично` (требует доработки; неполный ESQL-бин выбрасывает исключение при вызове),
   `требует ручной доработки` (код формируется вручную по FR-3.x)
   и `не поддерживается` (расширьте правила FR-2.2 или передайте эксперту).
 
@@ -286,65 +292,49 @@ camel.main.routes-include-pattern = classpath:camel/*.xml
 символ `-` не образует «двойного» расширения, и стандартный XML-лоадер
 подбирается автоматически, без дополнительной регистрации.
 
-### 6.1. Реализация Compute-бинoв (аналог ESQL-модулей, FR-3.1/FR-3.5)
+### 6.1. Compute-бины
 
-Маршрут ссылается на бин `adapterCompute1` (имя camelize-ится из
-`esql://routine/adapter#Adapter_Compute1.Main` → `adapterCompute1`).
-
-**С 2026-10 бины генерируются конвертером** (FR-3.2): после `convert` ищите их в
-`<output>/beans/<Class>.java` (пакет `com.example.iib_camel.runtime.generated`). Скопируйте
-сгенерированный файл в `runtime/src/main/java/com/example/iib_camel/runtime/generated/`:
+Конвертер создаёт `beans/<Class>.java` в пакете
+`com.example.iib_camel.runtime.generated`. В базовом примере используются
+сгенерированные `AdapterCompute1` и `CheckCompute1`; ручной POJO-парсер не требуется.
 
 ```bash
-cp converted/beans/CheckCompute1.java \
-   runtime/src/main/java/com/example/iib_camel/runtime/generated/
-# и модели тела, если конвертер их создал (FR-3.4, первый уровень):
-cp converted/models/Order.java \
-   runtime/src/main/java/com/example/iib_camel/runtime/generated/model/
+mkdir -p runtime/src/main/java/com/example/iib_camel/runtime/generated
+cp converted/beans/*.java runtime/src/main/java/com/example/iib_camel/runtime/generated/
 ```
 
-Сгенерированный бин наследует `AbstractComputeBean`
-(`runtime/src/main/java/com/example/iib_camel/runtime/compute/`): `copy` — перенос тела,
-`mqmd` — MQMD-поле как JMS-свойство, `setBodyField` — правка XML-дерева; публичный шлюз
-`compute(Exchange)` помечен `@Handler` (однозначный выбор метода Camel). Если модуль вне
-переводимого подмножества и бин не сгенерирован — пишите бин вручную по шаблону
-`runtime/compute/AdapterCompute1.java`.
+Бины наследуют `AbstractComputeBean`. Единственная точка вызова — `compute(Exchange)`.
+`copy()` восстанавливает тело и заголовки на входе в текущий Compute; снимок рассчитан
+на строковое тело и скалярные значения заголовков. `mqmd()` устанавливает JMS-свойство,
+что ещё не доказывает поддержку реального поля IBM MQMD. `setBodyField()` изменяет XML:
+путь после XMLNSC включает корень, например `Order.Status` для `<Order><Status>…`.
 
-Для модулей вне переводимого подмножества реализуйте бин вручную — по шаблону
-`runtime/src/main/java/com/example/iib_camel/runtime/compute/AdapterCompute1.java`:
+Полностью переводится ограниченное прямолинейное подмножество: копирование,
+поддерживаемые строковые SET и завершающий `RETURN TRUE`. IF/CASE/циклы,
+`RETURN FALSE`, PROPAGATE и неизвестные конструкции сохраняются для ручной доработки.
+**Неполный бин выбрасывает `UnsupportedOperationException` до любых присваиваний**.
+Пооператорные статусы показывают распознанные операции, но не разрешают запускать
+часть бизнес-логики отдельно от неподдерживаемого блока.
 
-```java
-@Component("adapterCompute1")
-public class AdapterCompute1 {
+Для ручной реализации используйте собственный наследник `AbstractComputeBean`,
+сохраняя ожидаемое имя Spring-бина. В приложении должен существовать один бин с этим
+именем. Исправления generated-файлов пока следует сохранять отдельно перед регенерацией.
 
-    public Adapter compute(Exchange exchange) throws Exception {
-        String xml = exchange.getIn().getBody(String.class);
-        // 1. перенос сообщения как есть (IIB: SET OutputRoot = InputRoot)
-        Adapter adapter = map/xml → модель (XmlMapper.readValue(xml, Adapter.class));
-        // 2. аналог SET OutputRoot.MQMD.ApplicationIdData = 'IIB-CAMEL-MIG'
-        exchange.getIn().setHeader("ApplicationIdData", "IIB-CAMEL-MIG");
-        return adapter;
-```
+### 6.2. XML-тело и модели
 
-Статус модуля в отчёте определяет, что делать с сгенерированным бином:
-`конвертировано` — бин готов без правок (corr-02); `частично` — внутри останутся
-`// TODO (FR-3.3)`-заглушки, доработайте ветвления вручную (corr-03); `требует ручной
-доработки` — пишите бин сами (см. шаблон выше).
-    }
-}
-```
+Route использует XPath по строковому XML-телу. Сохраняются строки filterTable,
+их порядок и связь с терминалами. `First` выбирает первое совпадение, `All` (по умолчанию)
+отправляет копию по каждой совпавшей строке. Default выполняется при отсутствии совпадений.
+Failure Route относится только к вычислению условий; исключение бизнес-ветки идёт
+во внешний catch. Полные цепочки обработчиков могут содержать Compute и другие
+поддерживаемые шаги. Изменения сообщения при ошибке откатываются к входу области
+обработки через MessageSnapshots, поставляемый в runtime.
+Неподдерживаемое выражение явно отклоняется; переход в Default вместо него не выполняется.
 
-Если ESQL-модуль содержит только `RETURN TRUE` (чистый проход) — достаточно
-вернуть входное тело без изменений.
-
-### 6.2. Модель сообщения (ULM, FR-3.4)
-
-Создайте POJO по XSD-структуре входного XML: классы с геттерами (не record) —
-simple-выражения (`${body.order.status}`) резолвятся через JavaBean-свойства.
-Пример — `runtime/src/main/java/com/example/iib_camel/runtime/model/{Adapter,Order}.java`.
-
-Используйте аннотацию `@JacksonXmlProperty(localName="Order")`, потому что Jackson XML
-регистрозависим (XML-элементы в IIB традиционно начинаются с большой буквы).
+Пока поддерживаются простые XML-пути без namespaces; JSON, namespace-префиксы
+и индексированные ESQL-пути требуют отдельной реализации. XML с DOCTYPE отклоняется.
+Модели из `models/` остаются предварительными заготовками: поля String,
+полного ULM и MapStruct пока нет. Для исполнения базового Route они не требуются.
 
 ---
 
@@ -396,10 +386,10 @@ java -Dspring.artemis.mode=NATIVE \
 Проверка корректности маршрута на реальном исполнении (встроенный Artemis):
 
 ```bash
-mvn -pl runtime test -Dtest=E2eDatasetTest
+mvn -pl runtime -am test -Dtest=E2eDatasetTest,GeneratedArtifactsTest,GeneratedRouteSemanticsTest -Dsurefire.failIfNoSpecifiedTests=false
 ```
 
-Ожидаемо: `Tests run: 1, Failures: 0` — датасет содержит три кейса:
+Проверяются сохранённые и свежесгенерированные маршруты; базовый датасет содержит три кейса:
 высокий приоритет → PRIORITY.Q, обычный → DEFAULT.Q, битое XML → ERROR.Q.
 
 ### 8.1. Ручная проверка (одноразовая, без тестов)

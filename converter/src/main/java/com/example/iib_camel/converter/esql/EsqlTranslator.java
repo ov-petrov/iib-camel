@@ -8,44 +8,23 @@ import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * Перевод ESQL-функции в Java-операторы бина (FR-3.2, первый автоматический уровень).
- *
- * Переводимое подмножество (базовый набор, типовые Compute-модули «перенести и пометить»):
- *
- *   SET OutputRoot = InputRoot;                        → esql.copy(exchange)  — тело переносится
- *                                                        как есть (QoS переносит camel-jms);
- *   SET OutputRoot.MQMD.'Field' = 'строка';            → esql.mqmd(exchange, "Field", "value")
- *                                                        (MQMD-поле → JMS-свойство сообщения);
- *   SET OutputRoot.XMLNSC.Path.To.Field = 'строка';    → esql.setBodyField(exchange,
- *                                                        "Path.To.Field", "value") —
- *                                                        динамическая правка XML-дерева;
- *   SET ... = CAST('x' AS ТИП);                        → литерал CAST как строка + примечание о типе.
- *
- * Всё прочее (ветвления, вызовы, сложные выражения) — TODO-заглушки с честной причиной:
- * статус оператора «не переведено» (см. отчёт convert, FR-3.3) — ничего не теряется молча.
- */
+/** Перевод явно поддерживаемых SET; непонятная логика сохраняется в диагностике. */
 public final class EsqlTranslator {
 
     private static final Pattern MQMD_TARGET =
             Pattern.compile("(?i)OUTPUTROOT\\.MQMD\\.(\\w+)");
     private static final Pattern BODY_TARGET =
-            Pattern.compile("(?i)OUTPUTROOT\\.(XMLNSC|XML|NS|NSC|JSON)\\.(.+)");
-    private static final Pattern DOMAIN_ROOT =
-            Pattern.compile("(?i)OUTPUTROOT(\\.\\w+)?");
+            Pattern.compile("(?i)OUTPUTROOT\\.(XMLNSC|XML|XMLNS)\\.([A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*)");
     private static final Pattern CAST =
             Pattern.compile("(?i)CAST\\s*\\(\\s*(.+?)\\s+AS\\s+(\\w+)\\s*\\)");
 
-    /** Один оператор перевода: исходный ESQL (трассируемость), Java-строка, статус, примечание. */
     public record StatementTranslation(String esql, String java, UnitStatus status, String note) {
     }
 
-    /** Результат перевода функции: операторы + список причин непереводимости. */
     public record FunctionTranslation(String functionName,
                                       List<StatementTranslation> statements,
                                       List<String> issues) {
 
-        /** Полный перевод: нет непереводимых операторов и неопознанных конструкций. */
         public boolean complete() {
             return issues.isEmpty()
                     && statements.stream().allMatch(s -> s.status() == UnitStatus.CONVERTED);
@@ -58,7 +37,6 @@ public final class EsqlTranslator {
         this.function = function;
     }
 
-    /** Перевод тела функции (Main) — операторы бина + перечень непереводимых конструкций. */
     public FunctionTranslation translate() {
         List<StatementTranslation> statements = new ArrayList<>();
         List<String> issues = new ArrayList<>();
@@ -71,6 +49,12 @@ public final class EsqlTranslator {
             }
         }
         issues.addAll(function.unsupportedFragments());
+        if (!function.returnsTrue()) {
+            issues.add("Main: требуется завершающий RETURN TRUE; без дальнейших операторов");
+        }
+        if (!"BOOLEAN".equalsIgnoreCase(function.returnType())) {
+            issues.add("Main: поддерживается только RETURNS BOOLEAN");
+        }
         return new FunctionTranslation(function.name(), List.copyOf(statements), List.copyOf(issues));
     }
 
@@ -78,7 +62,6 @@ public final class EsqlTranslator {
         String target = assignment.target();
         String value = assignment.value();
 
-        // полная копия сообщения: тело переносится как есть
         if (isCopyWholeMessage(target, value)) {
             return new StatementTranslation(
                     original(assignment),
@@ -89,7 +72,6 @@ public final class EsqlTranslator {
 
         Optional<String> literal = stringLiteral(value);
         if (literal.isEmpty()) {
-            // CAST-выражение: литерал достаём, целевой тип фиксируем примечанием
             Matcher cast = CAST.matcher(value);
             if (cast.matches() && stringLiteral(cast.group(1)).isPresent()) {
                 return setByTarget(target, stringLiteral(cast.group(1)).get(), assignment,
@@ -101,7 +83,6 @@ public final class EsqlTranslator {
         return setByTarget(target, literal.get(), assignment, null);
     }
 
-    /** SET в один из трёх переводимых доменов: MQMD-свойство, поле тела XML, либо отказ. */
     private StatementTranslation setByTarget(String target, String value, EsqlAssignment assignment,
                                               String castNote) {
         Matcher mqmd = MQMD_TARGET.matcher(target);
@@ -125,23 +106,37 @@ public final class EsqlTranslator {
                     castNote == null ? note + " → поле тела XML"
                                      : note + " → поле тела XML (" + castNote + ")");
         }
+        if (target.regionMatches(true, 0, "OutputRoot.JSON", 0, "OutputRoot.JSON".length())) {
+            return unsupported(target, value, assignment, "домен JSON не поддерживается XML-runtime");
+        }
         return unsupported(target, value, assignment,
                 "цель вне переводимого подмножества (ожидается OutputRoot, OutputRoot.MQMD.* "
-                + "или OutputRoot.<domain>.<path>)");
+                + "или OutputRoot.<XMLNSC|XML|XMLNS>.<простой путь без namespaces/индексов>)");
     }
 
-    /** SET OutputRoot = InputRoot (именно корень, без доменных суффиксов кроме тривиальных). */
     private static boolean isCopyWholeMessage(String target, String value) {
         return value.equalsIgnoreCase("InputRoot")
-                && DOMAIN_ROOT.matcher(target).matches()
-                && !MQMD_TARGET.matcher(target).matches()
-                && !BODY_TARGET.matcher(target).matches();
+                && target.equalsIgnoreCase("OutputRoot");
     }
 
-    /** Строковый литерал ESQL: 'текст' (регулярно через DOTALL, чтобы не рвать многострочные). */
     private static Optional<String> stringLiteral(String value) {
-        Matcher m = Pattern.compile("(?s)^'(.*)'$").matcher(value.strip());
-        return m.matches() ? Optional.of(m.group(1)) : Optional.empty();
+        String expression = value.strip();
+        if (expression.length() < 2 || expression.charAt(0) != '\'') {
+            return Optional.empty();
+        }
+        var literal = new StringBuilder();
+        for (int i = 1; i < expression.length(); i++) {
+            char c = expression.charAt(i);
+            if (c != '\'') {
+                literal.append(c);
+            } else if (i + 1 < expression.length() && expression.charAt(i + 1) == '\'') {
+                literal.append('\'');
+                i++;
+            } else {
+                return i == expression.length() - 1 ? Optional.of(literal.toString()) : Optional.empty();
+            }
+        }
+        return Optional.empty();
     }
 
     private static StatementTranslation unsupported(String target, String value,
@@ -149,18 +144,17 @@ public final class EsqlTranslator {
         return new StatementTranslation(
                 original(assignment),
                 "// TODO (FR-3.3): не переводится автоматически: SET " + target + " = " + value,
-        /** Правила перевода нет — TODO-заглушка в бине (FR-3.3). */
                 UnitStatus.NOT_SUPPORTED,
                 reason);
     }
 
-    /** Исходный текст оператора с точкой с запятой — для комментария-трассируемости в бине. */
     private static String original(EsqlAssignment assignment) {
         return "SET " + assignment.target() + " = " + assignment.value() + ";";
     }
 
-    /** Экранирование литерала для Java-исходника (кавычки и слэши). */
     private static String escape(String s) {
-        return s.replace("\\", "\\\\").replace("\"", "\\\"");
+        return s.replace("\\", "\\\\").replace("\"", "\\\"")
+                .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+                .replace("\b", "\\b").replace("\f", "\\f");
     }
 }

@@ -5,30 +5,14 @@ import com.example.iib_camel.converter.report.UnitStatus;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Рендерер системного инвентаря ESQL «как есть» (Markdown) — используется командой
- * {@code analyze}. Граница с конвертацией соблюдена: отчёт показывает текущий ESQL-мир
- * (модули, функции, операторы, готовность к автоматическому переводу) и **не** содержит
- * артефактов целевого вида (бины, модели) и статусов конвертации — это отчёт команды
- * `convert` (FR-5.1).
- *
- * Оценка переводимости — по базовому подмножеству FR-3.2 (корень, MQMD, тело, CAST)
- * через {@link EsqlTranslator}; функции кроме Main, FILTER-модули и ветвления честно
- * уменьшают долю («переводимо частично»), модуль без Main — «вне подмножества».
- *
- * Детерминированный (D-3): обход файлов и модулей — по порядку входа отчёта.
- */
 public final class EsqlInventoryRenderer {
 
-    /** Разобранный файл: список модулей либо причина ошибки разбора. */
     public record EsqlFileInfo(String fileName, List<EsqlModule> modules, String error) {
     }
 
-    /** Результат рендера: документ + сводка по типам вердиктов (для консоли команды). */
     public record RenderResult(String markdown, long total, long full, long partial, long outliers) {
     }
 
-    /** Накопитель вердиктов (дубликаты имён в разных файлах считаются отдельно). */
     private static final class Counts {
         long total;
         long full;
@@ -36,14 +20,12 @@ public final class EsqlInventoryRenderer {
         long outliers;
     }
 
-    /** Оценка одного модуля: сколько операторов переведено и что вне подмножества. */
     private static final class ModuleScore {
         long converted;
         long totalStatements;
         List<String> issues = new ArrayList<>();
     }
 
-    /** Системный отчёт: таблица модулей + сводка переводимости по подмножеству FR-3.2. */
     public RenderResult render(List<EsqlFileInfo> files) {
         var counts = new Counts();
         var rows = new StringBuilder();
@@ -92,7 +74,6 @@ public final class EsqlInventoryRenderer {
         return new RenderResult(out.toString(), counts.total, counts.full, counts.partial, counts.outliers);
     }
 
-    /** Вердикт модуля + учёт в сводке (единиственный инкремент на модуль — D-3). */
     private static String verdict(EsqlModule module, ModuleScore score, Counts counts) {
         if (score.issues.stream().anyMatch(i -> i.equals("Main не найдена"))) {
             counts.outliers++;
@@ -110,11 +91,10 @@ public final class EsqlInventoryRenderer {
         return "вне подмножества";
     }
 
-    /** Статус модуля относительно переводимого подмножества (для сводки FR-3.2). */
     private ModuleScore score(EsqlModule module) {
         ModuleScore score = new ModuleScore();
         EsqlFunction main = module.functions().stream()
-                .filter(f -> f.name().equals("Main"))
+                .filter(f -> f.name().equalsIgnoreCase("Main"))
                 .findFirst()
                 .orElse(null);
         if (main == null) {
@@ -127,6 +107,11 @@ public final class EsqlInventoryRenderer {
                 .count();
         score.totalStatements = translation.statements().size();
         score.issues = new ArrayList<>(translation.issues());
+        for (EsqlFunction function : module.functions()) {
+            if (function != main) {
+                score.issues.add("дополнительная функция " + function.name() + " не переводится автоматически");
+            }
+        }
         return score;
     }
 }
