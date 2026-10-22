@@ -2,6 +2,7 @@ package com.example.iib_camel.runtime.compute;
 
 import com.example.iib_camel.runtime.model.Adapter;
 import com.fasterxml.jackson.dataformat.xml.XmlMapper;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.camel.Exchange;
 import org.springframework.stereotype.Component;
 
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Component;
  * MQMD-метка отображается в свойство JMS-сообщения ApplicationIdData (см. тесты e2e).
  * Тело парсится в модель (FR-3.4); некорректный XML даёт исключение → doCatch → jms:ADAPTER.ERROR.Q.
  */
+@Slf4j
 @Component("adapterCompute1")
 public class AdapterCompute1 {
 
@@ -27,6 +29,7 @@ public class AdapterCompute1 {
         String xml = exchange.getIn().getBody(String.class);
         Adapter adapter = mapper.readValue(xml, Adapter.class);
         exchange.getIn().setHeader("ApplicationIdData", "IIB-CAMEL-MIG");
+        log.debug("Compute adapterCompute1: тело разобрано, проставлена метка IIB-CAMEL-MIG");
         return adapter;
     }
 }

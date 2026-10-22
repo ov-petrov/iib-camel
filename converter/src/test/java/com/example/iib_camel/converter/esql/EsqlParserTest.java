@@ -2,6 +2,8 @@ package com.example.iib_camel.converter.esql;
 
 import org.junit.jupiter.api.Test;
 
+import java.nio.charset.StandardCharsets;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -11,7 +13,7 @@ class EsqlParserTest {
 
     private static String adapterEsql() {
         try (var in = EsqlParserTest.class.getResourceAsStream("/corpus/corr-01-simple-adapter/Adapter_Compute1.esql")) {
-            return new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
         } catch (Exception e) {
             throw new IllegalStateException(e);
         }

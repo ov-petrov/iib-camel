@@ -1,6 +1,8 @@
 package com.example.iib_camel.runtime.e2e;
 
+import jakarta.jms.ConnectionFactory;
 import jakarta.jms.Message;
+import jakarta.jms.TextMessage;
 import org.apache.camel.CamelContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -45,7 +47,7 @@ class E2eDatasetTest {
     private JmsTemplate jmsTemplate;
 
     @Autowired
-    private jakarta.jms.ConnectionFactory connectionFactory;
+    private ConnectionFactory connectionFactory;
 
     @BeforeEach
     void contextIsRunningAndQueuesAreEmpty() {
@@ -87,7 +89,7 @@ class E2eDatasetTest {
 
         // вход: JmsTemplate задаёт приоритет (аналог MQMD) на JMS-сообщении;
         // приоритет JMS применяется только при explicit QoS (Spring JmsTemplate)
-        var inputTemplate = new org.springframework.jms.core.JmsTemplate(connectionFactory);
+        var inputTemplate = new JmsTemplate(connectionFactory);
         inputTemplate.setExplicitQosEnabled(true);
         if (inputPriority != null) {
             inputTemplate.setPriority(inputPriority);
@@ -103,7 +105,7 @@ class E2eDatasetTest {
         // тело переносится без изменений (Compute: SET OutputRoot = InputRoot);
         // форматируем канонически — Arts различия в пробелах не важны
         String expectedBody = stripXmlDecl(body);
-        String actualBody = ((jakarta.jms.TextMessage) received).getText().strip();
+        String actualBody = ((TextMessage) received).getText().strip();
         assertEquals(expectedBody.replaceAll("\\s+", ""), actualBody.replaceAll("\\s+", ""),
                 name + ": тело сообщения изменилось в маршруте");
 

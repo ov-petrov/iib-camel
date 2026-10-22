@@ -1,7 +1,9 @@
 package com.example.iib_camel.runtime.model;
 
-import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
 import com.fasterxml.jackson.dataformat.xml.XmlMapper;
+import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
+import lombok.Getter;
+import lombok.Setter;
 
 /**
  * Корневая модель сообщения (ULM, FR-3.4) — целевой вид после парсинга XML-тела.
@@ -11,22 +13,17 @@ import com.fasterxml.jackson.dataformat.xml.XmlMapper;
  * Имена XML-элементов задаются явно (регистрозависимость Jackson XML).
  *
  * toString() рендерит канонический XML — он используется camel-jms при отправке
- * TextMessage (IIB-семантика: OutputRoot переносится как XML-сообщение).
+ * TextMessage (IIB-семантика: OutputRoot переносится как XML-сообщение),
+ * поэтому @ToString не применяется; доступоры генерирует Lombok.
  */
+@Getter
+@Setter
 public class Adapter {
 
     private static final XmlMapper XML = new XmlMapper();
 
     @JacksonXmlProperty(localName = "Order")
     private Order order;
-
-    public Order getOrder() {
-        return order;
-    }
-
-    public void setOrder(Order order) {
-        this.order = order;
-    }
 
     @Override
     public String toString() {

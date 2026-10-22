@@ -2,6 +2,7 @@ package com.example.iib_camel.converter.msgflow;
 
 import org.junit.jupiter.api.Test;
 
+import java.io.InputStream;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -90,7 +91,7 @@ class MsgFlowParserTest {
 
     @Test
     void rejectsNonMsgflowDocument() {
-        var fake = new java.io.InputStream() {
+        var fake = new InputStream() {
             @Override
             public int read() {
                 return -1;

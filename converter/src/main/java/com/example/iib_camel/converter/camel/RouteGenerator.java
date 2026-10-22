@@ -1,9 +1,11 @@
 package com.example.iib_camel.converter.camel;
 
+import com.example.iib_camel.converter.msgflow.FlowConnection;
 import com.example.iib_camel.converter.msgflow.FlowNode;
 import com.example.iib_camel.converter.msgflow.MsgFlow;
 
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Генератор маршрутов Apache Camel (XML DSL) из промежуточной модели — FR-2.1–2.7.
@@ -17,8 +19,8 @@ public final class RouteGenerator {
 
     private static final String CAMEL_NS = "http://camel.apache.org/schema/spring";
     /** Базовый набор узлов (FR-2.2, Must) — используется генератором и отчётом FR-5.1. */
-    public static final java.util.Set<String> SUPPORTED_BASE_KINDS =
-            java.util.Set.of("MQInput", "MQOutput", "Compute", "Route");
+    public static final Set<String> SUPPORTED_BASE_KINDS =
+            Set.of("MQInput", "MQOutput", "Compute", "Route");
 
     private final MsgFlow flow;
 
@@ -92,7 +94,7 @@ public final class RouteGenerator {
     private StringBuilder catchBranch(FlowNode input) {
         StringBuilder out = new StringBuilder();
         for (String terminal : new String[] {"catch", "failure"}) {
-            Optional<com.example.iib_camel.converter.msgflow.FlowConnection> link = connection(input.id(), terminal);
+            Optional<FlowConnection> link = connection(input.id(), terminal);
             if (link.isPresent()) {
                 FlowNode target = flow.node(link.get().targetNodeId());
                 out.append(line(3, "<doCatch>"))
@@ -117,7 +119,7 @@ public final class RouteGenerator {
              + line(indent, "<log message=\"Unsupported IIB node: " + node.kind() + "\"/>");
     }
 
-    private Optional<com.example.iib_camel.converter.msgflow.FlowConnection> connection(String nodeId, String terminal) {
+    private Optional<FlowConnection> connection(String nodeId, String terminal) {
         return flow.connections().stream()
                 .filter(c -> c.sourceNodeId().equals(nodeId) && c.sourceTerminal().equals(terminal))
                 .findFirst();

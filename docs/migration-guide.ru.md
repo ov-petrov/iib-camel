@@ -25,7 +25,7 @@
 | Git | — | клонирование репозитория |
 | Брокер JMS | встроенный Artemis (из коробки) или внешний | встроенный broker стартует вместе с runtime |
 
-> Установка JDK 25螺栓 (Linux/macOS, Homebrew): `brew install openjdk@25`.
+> Установка JDK 25 (Linux/macOS, Homebrew): `brew install openjdk@25`.
 > Убедитесь, что `java -version` и `mvn -version` показывают JDK 21+.
 
 Проверка окружения:
