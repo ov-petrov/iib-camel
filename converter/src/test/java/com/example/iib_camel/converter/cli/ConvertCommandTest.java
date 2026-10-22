@@ -47,13 +47,16 @@ class ConvertCommandTest {
         assertTrue(report.contains("## Детализация узлов"));
         assertTrue(report.contains("## ESQL"));
         assertTrue(report.contains("## Сводка"));
-        // единицы: 6 узлов + 1 модуль ESQL; полнота автоматизации 6/7 = 85.7% (FR-5.3)
+        // единицы: 6 узлов + 1 модуль ESQL; модуль ESQL переведён полностью → полнота 100% (FR-5.3)
         assertTrue(report.contains("| **Всего** | 7 | 100.0 |"));
-        assertTrue(report.contains("85.7"));
-        // статусы честные: узлы конвертированы, ESQL требует ручной доработки (FR-3.2)
+        assertTrue(report.contains("| Adapter_Compute1.esql | Adapter_Compute1 | 1 | 2 | конвертировано |"),
+                "модуль ESQL получает статус перевода, а не безусловный MANUAL (FR-3.2)");
+        assertTrue(report.contains("beans/AdapterCompute1.java"), "в примечании — сгенерированный бин");
+        assertTrue(report.contains("OutputRoot.MQMD.ApplicationIdData → JMS-свойство"),
+                "оператор SET MQMD переведён в JMS-свойство (примечание пооператорной таблицы)");
+        Files.readString(output.resolve("beans/AdapterCompute1.java"));
         assertTrue(report.contains("| Input | MQInput | конвертировано | вход: jms:ADAPTER.IN |"));
         assertTrue(report.contains("Adapter_Compute1.esql"));
-        assertTrue(report.contains("перевод ESQL → Java не автоматизирован"));
         assertTrue(report.contains("OutputRoot.MQMD.ApplicationIdData"));
     }
 
@@ -88,6 +91,51 @@ class ConvertCommandTest {
         assertTrue(report.contains("| Check.subflow | direct: (вызов из родительского маршрута) |"));
         assertTrue(report.contains("- Подпотоков: 1 (развёрнуты во вложенные маршруты direct:, FR-2.2)"));
         assertTrue(report.contains("Check_Compute1.esql"), "ESQL подпотока в отчёте");
+        // ESQL подпотока теперь переводится: бин сгенерирован и описан в отчёте (FR-3.2)
+        assertTrue(Files.exists(output.resolve("beans/CheckCompute1.java")),
+                "бин Compute-модуля подпотока сгенерирован в output/beans/");
+        assertTrue(report.contains("| Check_Compute1.esql | Check_Compute1 | 1 | 2 | конвертировано |"),
+                "модуль ESQL подпотока переведён полностью");
+        assertTrue(report.contains("OutputRoot.MQMD.CommentField → JMS-свойство"),
+                "MQMD-метка подпотока переведена пооператорно");
+    }
+
+    @Test
+    void convertsCorr03EsqlMappingWithHonestPartialStatus() throws Exception {
+        Path input = copyFixture().resolve("corr-03-esql-mapping");
+        Path output = tempDir.resolve("out-corr03");
+
+        int exit = run(input, output);
+
+        assertEquals(0, exit);
+
+        // маршрут побайтово равен golden-файлу
+        String golden = Files.readString(
+                Path.of("src/test/resources/corpus/corr-03-esql-mapping/expected/Adjust-route.xml"),
+                StandardCharsets.UTF_8);
+        assertEquals(golden, Files.readString(output.resolve("Adjust-route.xml")));
+
+        // бин: переведённые операторы (copy/MQMD/тело/CAST) + TODO-заглушка ветвления
+        String goldenBean = Files.readString(
+                Path.of("src/test/resources/corpus/corr-03-esql-mapping/expected/AdjustCompute1.java"),
+                StandardCharsets.UTF_8);
+        assertEquals(goldenBean, Files.readString(output.resolve("beans/AdjustCompute1.java"),
+                StandardCharsets.UTF_8), "бин побайтово равен golden (D-3)");
+
+        String report = Files.readString(output.resolve("migration-report.md"), StandardCharsets.UTF_8);
+        assertTrue(report.contains("| Adjust_Compute1.esql | Adjust_Compute1 | 1 | 4 | частично |"),
+                "модуль с непереводимым ветвлением — статус «частично» (FR-3.3)");
+        assertTrue(report.contains(
+                "`SET OutputRoot.XMLNSC.Order.Rating = CAST('100' AS DECIMAL);` | конвертировано"),
+                "CAST переводится пооператорно");
+        assertTrue(report.contains("(тип DECIMAL)"), "тип CAST зафиксирован примечанием");
+        assertTrue(report.contains("Непереводимые конструкции `Adjust_Compute1`"),
+                "причины непереводимости поимённо в отчёте");
+        assertTrue(goldenBean.contains("// TODO (FR-3.3): IF InputBody.Order.Status = 'HOLD'"),
+                "непереводимое ветвление видно в бине (golden-сравнение бина выше)");
+        // непереводимых единиц нет: все операторы, попавшие в бин, переведены; требует внимания — ветвление
+        assertTrue(report.contains("Требуют внимания: 1 из 5 единиц"),
+                "ветвление — единственная причина внимания");
     }
 
     @Test

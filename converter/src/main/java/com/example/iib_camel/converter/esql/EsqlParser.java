@@ -26,6 +26,9 @@ public final class EsqlParser {
             "\\bSET\\s+([^=;]+?)\\s*=\\s*(.+?);", Pattern.CASE_INSENSITIVE);
     private static final Pattern RETURN_TRUE =
             Pattern.compile("\\bRETURN\\s+TRUE\\s*;", Pattern.CASE_INSENSITIVE);
+    /** Конструкции вне переводимого подмножества (FR-3.2 base): Statements с ветвлениями и вызовами. */
+    private static final Pattern UNSUPPORTED_STATEMENT = Pattern.compile(
+            "\\b(IF|WHILE|CALL|THROW)\\s[^;]*;", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
 
     private static final String END_MODULE = "END MODULE;";
     private static final String END_FUNCTION = "END;";
@@ -53,13 +56,13 @@ public final class EsqlParser {
                         "модуль \"" + name + "\": не найдено закрывающее \"" + END_MODULE + "\"");
             }
             modules.add(new EsqlModule(schema, name, type,
-                    functions(source, moduleMatcher.end(), moduleEnd)));
+                    functions(type, source, moduleMatcher.end(), moduleEnd)));
             moduleMatcher.region(moduleEnd, source.length());
         }
         return modules;
     }
 
-    private List<EsqlFunction> functions(String source, int moduleStart, int moduleEnd) {
+    private List<EsqlFunction> functions(String moduleType, String source, int moduleStart, int moduleEnd) {
         List<EsqlFunction> functions = new ArrayList<>();
         Matcher functionMatcher = FUNCTION.matcher(source).region(moduleStart, moduleEnd);
         while (functionMatcher.find()) {
@@ -69,22 +72,48 @@ public final class EsqlParser {
                 throw new IllegalArgumentException(
                         "функция \"" + name + "\": не найдено закрывающее \"" + END_FUNCTION + "\"");
             }
-            functions.add(function(name, source, functionMatcher.end(), bodyEnd));
+            functions.add(function(name, moduleType, source, functionMatcher.end(), bodyEnd));
             functionMatcher.region(bodyEnd, moduleEnd);
         }
         return List.copyOf(functions);
     }
 
-    private EsqlFunction function(String name, String source, int bodyStart, int bodyEnd) {
+    private EsqlFunction function(String name, String moduleType, String source,
+                                  int bodyStart, int bodyEnd) {
         String body = source.substring(bodyStart, bodyEnd);
-        List<EsqlAssignment> assignments = new ArrayList<>();
+        // каждая конструкция IF/WHILE/CALL/THROW — честная причина «частично» (FR-3.3)
+        List<String> unsupported = new ArrayList<>();
+        List<int[]> unsupportedRanges = new ArrayList<>();
+        Matcher unsupportedStatement = UNSUPPORTED_STATEMENT.matcher(body);
+        while (unsupportedStatement.find()) {
+            unsupported.add(unsupportedStatement.group().strip().replaceAll("\\s+", " "));
+            unsupportedRanges.add(new int[] {unsupportedStatement.start(), unsupportedStatement.end()});
+        }
+        // SET-операторы внутри IF/WHILE не переводим: их ветвлённый контекст неизвестен,
+        // они остаются внутри TODO-фрагмента (ничего не теряется молча, FR-5.1)
+        List<EsqlAssignment> plain = new ArrayList<>();
         Matcher setMatcher = SET.matcher(body);
         while (setMatcher.find()) {
-            assignments.add(new EsqlAssignment(setMatcher.group(1).strip(),
-                    setMatcher.group(2).strip()));
+            boolean insideBranch = unsupportedRanges.stream()
+                    .anyMatch(r -> setMatcher.start() >= r[0] && setMatcher.start() < r[1]);
+            if (!insideBranch) {
+                plain.add(new EsqlAssignment(setMatcher.group(1).strip(),
+                        setMatcher.group(2).strip()));
+            }
+        }
+        // функции кроме Main — вне переводимого подмножества; заметка закрепляется
+        // за самой функцией, а на статус модуля она влияет через генератор (FR-3.3)
+        if (!"Main".equals(name)) {
+            unsupported.add("функция " + name + ": функция кроме Main не переводится автоматически");
+        }
+        // FILTER-модули требуют булевой логики потока — вне переводимого подмножества
+        if ("FILTER".equals(moduleType)) {
+            unsupported.add("FILTER-модуль: булев RETURN управляет терминалами потока — "
+                    + "перевод требует правила для filter");
         }
         boolean returnsTrue = RETURN_TRUE.matcher(body).find();
-        return new EsqlFunction(name, "BOOLEAN", assignments, returnsTrue);
+        return new EsqlFunction(name, "BOOLEAN", List.copyOf(plain), returnsTrue,
+                List.copyOf(unsupported));
     }
 
     private Optional<String> match(Pattern pattern, String source) {

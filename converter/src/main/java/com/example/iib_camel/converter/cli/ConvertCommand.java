@@ -2,9 +2,11 @@ package com.example.iib_camel.converter.cli;
 
 import com.example.iib_camel.converter.camel.RouteGenerator;
 import com.example.iib_camel.converter.diagram.DiagramNames;
-import com.example.iib_camel.converter.esql.EsqlAssignment;
+import com.example.iib_camel.converter.esql.EsqlFunction;
 import com.example.iib_camel.converter.esql.EsqlModule;
 import com.example.iib_camel.converter.esql.EsqlParser;
+import com.example.iib_camel.converter.esql.EsqlToJavaGenerator;
+import com.example.iib_camel.converter.esql.EsqlTranslator;
 import com.example.iib_camel.converter.msgflow.MsgFlow;
 import com.example.iib_camel.converter.msgflow.MsgFlowParser;
 import com.example.iib_camel.converter.report.Diagnosis;
@@ -64,12 +66,14 @@ public final class ConvertCommand implements Callable<Integer> {
     record UnitRow(String flowName, String nodeId, String kind, UnitStatus status, String note) {
     }
 
-    /** Единица «модуль ESQL» для отчёта: всегда MANUAL (перевод не автоматизирован). */
+    /** Единица «модуль ESQL» для отчёта (FR-3.2): статус перевода + сгенерированный бин. */
     record EsqlUnit(String file, String module, List<String> functions,
-                    List<OperatorRow> operators) {
+                    List<OperatorRow> operators, UnitStatus status, String note,
+                    List<String> issues) {
     }
 
-    record OperatorRow(String module, String function, String target) {
+    /** Единица «оператор ESQL» для отчёта: статус перевода и примечание (FR-5.2). */
+    record OperatorRow(String module, String function, String esql, UnitStatus status, String note) {
     }
 
     @Override
@@ -128,17 +132,53 @@ public final class ConvertCommand implements Callable<Integer> {
             }
         }
 
+        // Перевод ESQL → Java-бины (FR-3.2): модуль → beans/<Class>.java (исходник без компиляции),
+        // честные статусы: все операторы переведены → конвертировано; часть → частично (FR-3.3);
+        // ни одного/нет Main → требует ручной доработки. Ничего не теряется молча (FR-5.1–5.3).
+        EsqlToJavaGenerator generator = new EsqlToJavaGenerator();
+        Path beansDir = output.resolve("beans");
         for (Path file : esqlFiles) {
             try {
                 List<EsqlModule> modules = new EsqlParser()
                         .parseAll(Files.readString(file, StandardCharsets.UTF_8));
-                esqlUnits.addAll(modules.stream().map(m -> new EsqlUnit(
-                        file.getFileName().toString(), m.name(),
-                        m.functions().stream().map(f -> f.name()).toList(),
-                        m.functions().stream()
-                                .flatMap(f -> f.assignments().stream()
-                                        .map(a -> new OperatorRow(m.name(), f.name(), a.target())))
-                                .toList())).toList());
+                for (EsqlModule m : modules) {
+                    List<OperatorRow> operators = new ArrayList<>();
+                    UnitStatus unitStatus = UnitStatus.MANUAL;
+                    String unitNote = "перевод не выполнен";
+                    List<String> issues = List.of();
+                    try {
+                        EsqlToJavaGenerator.BeanResult bean = generator.generate(m);
+                        issues = List.copyOf(bean.issues());
+                        Files.createDirectories(beansDir);
+                        Files.writeString(beansDir.resolve(bean.className() + ".java"),
+                                bean.java(), StandardCharsets.UTF_8);
+                        for (EsqlTranslator.StatementTranslation st : bean.statements()) {
+                            operators.add(new OperatorRow(
+                                    m.name(), "Main", st.esql(), st.status(), st.note()));
+                        }
+                        long convertedOps = bean.statements().stream()
+                                .filter(st -> st.status() == UnitStatus.CONVERTED).count();
+                        if (bean.complete()) {
+                            unitStatus = UnitStatus.CONVERTED;
+                            unitNote = "бин `" + bean.beanId() + "` → `beans/"
+                                    + bean.className() + ".java`";
+                        } else if (convertedOps > 0) {
+                            unitStatus = UnitStatus.PARTIAL;
+                            unitNote = "частично (" + convertedOps + " из " + bean.statements().size()
+                                    + " операторов) — бин `beans/" + bean.className() + ".java`";
+                        } else {
+                            unitStatus = UnitStatus.MANUAL;
+                            unitNote = "операторы вне переводимого подмножества: "
+                                    + bean.issues().get(0);
+                        }
+                    } catch (IllegalArgumentException e) {
+                        unitStatus = UnitStatus.MANUAL;
+                        unitNote = e.getMessage();
+                    }
+                    esqlUnits.add(new EsqlUnit(file.getFileName().toString(), m.name(),
+                            m.functions().stream().map(EsqlFunction::name).toList(),
+                            List.copyOf(operators), unitStatus, unitNote, issues));
+                }
             } catch (Exception e) {
                 errors.add(file + ": " + e.getMessage());
             }
@@ -177,10 +217,10 @@ public final class ConvertCommand implements Callable<Integer> {
         report.append("Конвертер iib-camel (one-shot CLI), FR-2.1–2.7, FR-3.1, FR-5.1–5.3. Источник: `")
                 .append(input).append("`.\n\n");
         report.append("""
-                Единицы конвертации: узлы `.msgflow` + модули ESQL. Статусы (FR-5.1):
+                Единицы конвертации: узлы `.msgflow` + подпотоки + модули ESQL. Статусы (FR-5.1):
                 `конвертировано` — правило применено полностью; `частично` — элемент создан с TODO-заглушкой
-                (нет свойства, узел не подключён к маршруту); `требует ручной доработки` — автоматизация
-                на текущем этапе не предусмотрена (код из ESQL, подпотоки); `не поддерживается` — правила
+                (непереводимые операторы ESQL, нет свойства, узел не подключён к маршруту); `требует
+                ручной доработки` — автоматизация не предусмотрена; `не поддерживается` — правила
                 конвертации нет, создана TODO-заглушка (FR-2.7).
                 \n""");
         appendUnitStats(report);
@@ -272,24 +312,35 @@ public final class ConvertCommand implements Callable<Integer> {
         }
     }
 
-    /** Модули ESQL: всегда «требует ручной доработки» (FR-3.2) + пооператорный разбор (FR-5.2). */
+    /** Модули ESQL: статус автоматического перевода (FR-3.2) + пооператорный разбор (FR-5.2). */
     private void appendEsqlDetails(StringBuilder report) {
         if (esqlUnits.isEmpty()) {
             return;
         }
-        report.append("## ESQL\n\n| Файл | Модуль | Функций | Присваиваний (SET) | Статус |\n|---|---|---|---|---|\n");
+        report.append("## ESQL\n\nМодули переведены подмножеством (FR-3.2): `SET OutputRoot = InputRoot`,"
+                + "`MQMD-поля`, `строковые поля тела`, `CAST-литералы`; ветвления и вызовы — TODO в бине"
+                + " (FR-3.3).\n\n")
+                .append("| Файл | Модуль | Функций | Присваиваний (SET) | Статус | Примечание |\n|---|---|---|---|---|---|\n");
         for (EsqlUnit u : esqlUnits) {
             report.append("| ").append(u.file()).append(" | ").append(u.module()).append(" | ")
                     .append(u.functions().size()).append(" | ").append(u.operators().size()).append(" | ")
-                    .append(UnitStatus.MANUAL.label())
-                    .append(" (перевод ESQL → Java не автоматизирован, FR-3.2) |\n");
+                    .append(u.status().label()).append(" | ")
+                    .append(u.status() == UnitStatus.CONVERTED
+                            ? u.note()
+                            : u.note() + " (FR-3.3)").append(" |\n");
         }
-        report.append("\n### Операторы ESQL\n\n| Файл | Модуль | Функция | SET → цель | Статус |\n|---|---|---|---|---|\n");
+        report.append("\n### Операторы ESQL\n\n| Файл | Модуль | Оператор | Статус | Примечание |\n|---|---|---|---|---|\n");
         for (EsqlUnit u : esqlUnits) {
             for (OperatorRow op : u.operators()) {
-                report.append("| ").append(u.file()).append(" | ").append(u.module()).append(" | ")
-                        .append(op.function()).append(" | ").append(op.target()).append(" | ")
-                        .append(UnitStatus.MANUAL.label()).append(" |\n");
+                report.append("| ").append(u.file()).append(" | ").append(op.module()).append(" | `")
+                        .append(op.esql()).append("` | ")
+                        .append(op.status().label()).append(" | ")
+                        .append(op.note() == null ? "" : op.note()).append(" |\n");
+            }
+            if (!u.issues().isEmpty()) {
+                report.append("\nНепереводимые конструкции `").append(u.module()).append("`:\n\n");
+                u.issues().forEach(i -> report.append("- ").append(i).append('\n'));
+                report.append('\n');
             }
         }
         report.append("\n");
@@ -333,13 +384,17 @@ public final class ConvertCommand implements Callable<Integer> {
 
     private void printSummary(int flowCount, int esqlCount) {
         Map<UnitStatus, Integer> counts = countByStatus();
+        long esqlConverted = esqlUnits.stream().filter(u -> u.status() == UnitStatus.CONVERTED).count();
+        long esqlPartial = esqlUnits.stream().filter(u -> u.status() == UnitStatus.PARTIAL).count();
+        long esqlManual = esqlUnits.size() - esqlConverted - esqlPartial;
         System.out.println("Конвертация: файлов " + flowCount + " из " + input + " → " + output
                 + "; узлов конвертировано " + counts.getOrDefault(UnitStatus.CONVERTED, 0)
                 + ", частично " + counts.getOrDefault(UnitStatus.PARTIAL, 0)
                 + ", не поддерживается " + counts.getOrDefault(UnitStatus.NOT_SUPPORTED, 0)
                 + (subflowFiles == 0 ? "" : "; подпотоков " + subflowFiles + " (direct:)")
                 + (esqlCount == 0 ? ""
-                  : "; модулей ESQL " + esqlUnits.size() + " (требует ручной доработки)")
+                  : "; модулей ESQL " + esqlUnits.size() + " (конвертировано "
+                    + esqlConverted + ", частично " + esqlPartial + ", ручных " + esqlManual + ")")
                 + "; ошибок " + errors.size());
     }
 
@@ -349,7 +404,7 @@ public final class ConvertCommand implements Callable<Integer> {
             counts.put(s, 0);
         }
         nodes.forEach(n -> counts.merge(n.status(), 1, Integer::sum));
-        esqlUnits.forEach(u -> counts.merge(UnitStatus.MANUAL, 1, Integer::sum));
+        esqlUnits.forEach(u -> counts.merge(u.status(), 1, Integer::sum));
         return counts;
     }
 
