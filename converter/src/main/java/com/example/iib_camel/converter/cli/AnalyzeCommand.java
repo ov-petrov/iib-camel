@@ -6,6 +6,9 @@ import com.example.iib_camel.converter.diagram.DiagramNames;
 import com.example.iib_camel.converter.diagram.MermaidDiagramRenderer;
 import com.example.iib_camel.converter.diagram.NodeCategoryRegistry;
 import com.example.iib_camel.converter.diagram.Orientation;
+import com.example.iib_camel.converter.esql.EsqlInventoryRenderer;
+import com.example.iib_camel.converter.esql.EsqlModule;
+import com.example.iib_camel.converter.esql.EsqlParser;
 import com.example.iib_camel.converter.msgflow.MsgFlow;
 import com.example.iib_camel.converter.msgflow.MsgFlowParser;
 import picocli.CommandLine;
@@ -18,6 +21,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -42,7 +46,12 @@ import java.util.stream.Stream;
  * обработка всех узлов IIB). ASCII-схема («дерево-конспект») удалена как дублирующая
  * Mermaid. Полный отчёт о конвертации — команда convert (FR-5.1).
  *
- * Вход — файл .msgflow/.subflow либо каталог (обход рекурсивно); по умолчанию ./input.
+ * Дополнительно по .esql-файлам (в той же директории, что и схемы, или же по одиночному
+ * .esql) строится системный инвентарь ESQL «как есть» — `esql-inventory.md`: модули,
+ * функции, операторы и оценка переводимости по подмножеству FR-3.2. Артефакты конвертации
+ * (бины, модели) на этой стадии не создаются — их показывает отчёт convert.
+ *
+ * Вход — файл .msgflow/.subflow/.esql либо каталог (обход рекурсивно); по умолчанию ./input.
  * Выход — каталог --output (по умолчанию ./output, создаётся при отсутствии).
  * Диагностика — stderr, сводка — stdout.
  *
@@ -58,9 +67,11 @@ public final class AnalyzeCommand implements Callable<Integer> {
             new MermaidDiagramRenderer(NodeCategoryRegistry.withIibDefaults());
     private final AsciiDocDiagramRenderer adocRenderer = new AsciiDocDiagramRenderer();
     private final AnalysisMarkdownRenderer analysisRenderer = new AnalysisMarkdownRenderer(mermaidRenderer);
+    private final EsqlParser esqlParser = new EsqlParser();
+    private final EsqlInventoryRenderer esqlInventoryRenderer = new EsqlInventoryRenderer();
 
     @Option(names = "--input", converter = PathConverter.class, defaultValue = "input",
-            description = "Файл .msgflow/.subflow или каталог с ними (по умолчанию ./input).")
+            description = "Файл .msgflow/.subflow/.esql или каталог с ними (по умолчанию ./input).")
     Path input;
 
     @Option(names = "--output", converter = PathConverter.class, defaultValue = "output",
@@ -117,12 +128,13 @@ public final class AnalyzeCommand implements Callable<Integer> {
             return 1;
         }
 
-        List<Path> files = collectFiles();
+        List<Path> files = collectFlowFiles();
         if (files == null) {
             return 1; // одиночный файл неподдерживаемого расширения
         }
-        if (files.isEmpty()) {
-            System.err.println("В \"" + input + "\" не найдено файлов .msgflow/.subflow");
+        List<Path> esqlFiles = collectEsqlFiles();
+        if (files.isEmpty() && esqlFiles.isEmpty()) {
+            System.err.println("В \"" + input + "\" не найдено файлов .msgflow/.subflow/.esql");
             return 3;
         }
 
@@ -137,6 +149,7 @@ public final class AnalyzeCommand implements Callable<Integer> {
         int failures = 0;
         int nodes = 0;
         int edges = 0;
+        List<EsqlInventoryRenderer.EsqlFileInfo> esqlInfos = new ArrayList<>();
 
         for (Path file : files) {
             try (InputStream in = Files.newInputStream(file)) {
@@ -173,17 +186,49 @@ public final class AnalyzeCommand implements Callable<Integer> {
             }
         }
 
-        System.out.println("Инвентаризация: потоков " + rendered
+        // Системный инвентарь ESQL «как есть» (отдельные артефакты конвертации не создаются):
+        // ошибки разбора ESQL учитываются в общем счётчике failures (политика кодов не меняется).
+        EsqlInventoryRenderer.RenderResult esqlResult = null;
+        int esqlFailures = 0;
+        for (Path file : esqlFiles) {
+            try {
+                List<EsqlModule> modules = esqlParser.parseAll(Files.readString(file, StandardCharsets.UTF_8));
+                esqlInfos.add(new EsqlInventoryRenderer.EsqlFileInfo(
+                        base.relativize(file).toString(), modules, null));
+            } catch (IllegalArgumentException | IOException e) {
+                // честная строка ошибки в инвентаре вместо молчаливого пропуска файла
+                esqlInfos.add(new EsqlInventoryRenderer.EsqlFileInfo(
+                        base.relativize(file).toString(), List.of(),
+                        e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
+                esqlFailures++;
+            }
+        }
+        if (!esqlInfos.isEmpty()) {
+            esqlResult = esqlInventoryRenderer.render(esqlInfos);
+            Files.writeString(output.resolve("esql-inventory.md"),
+                    esqlResult.markdown(), StandardCharsets.UTF_8);
+        }
+
+        System.out.print("Инвентаризация: потоков " + rendered
                 + " из " + files.size()
                 + ", артефактов " + artifacts + (fmt.equals("all") ? " (3 формата)" : "")
                 + ", узлов " + nodes
-                + ", связей " + edges
-                + ", ошибок " + failures);
-        return failures == 0 ? 0 : (rendered > 0 ? 2 : 3);
+                + ", связей " + edges);
+        if (esqlResult != null) {
+            System.out.print("; ESQL: файлов " + esqlFiles.size()
+                    + ", модулей " + esqlResult.total()
+                    + " (переводимо полностью " + esqlResult.full()
+                    + ", частично " + esqlResult.partial()
+                    + ", вне подмножества " + esqlResult.outliers()
+                    + "), esql-inventory.md");
+        }
+        System.out.println(", ошибок " + (failures + esqlFailures));
+        return (failures + esqlFailures) == 0 ? 0
+                : (rendered > 0 || esqlResult != null ? 2 : 3);
     }
 
-    /** Сбор входных файлов: одиночный файл либо рекурсивный обход каталога (детерминированный порядок). */
-    private List<Path> collectFiles() throws IOException {
+    /** Сбор файлов схем: одиночный файл либо рекурсивный обход каталога (детерминированный порядок). */
+    private List<Path> collectFlowFiles() throws IOException {
         if (Files.isRegularFile(input)) {
             if (!isFlowFile(input)) {
                 System.err.println("Ошибка аргументов: ожидался файл .msgflow/.subflow, получен: " + input);
@@ -199,9 +244,26 @@ public final class AnalyzeCommand implements Callable<Integer> {
         }
     }
 
+    /** Сбор ESQL-файлов: одиночный .esql либо обход каталога; список может быть пустым. */
+    private List<Path> collectEsqlFiles() throws IOException {
+        if (Files.isRegularFile(input)) {
+            return isEsqlFile(input) ? List.of(input) : List.of();
+        }
+        try (Stream<Path> walk = Files.walk(input)) {
+            return walk.filter(Files::isRegularFile)
+                    .filter(AnalyzeCommand::isEsqlFile)
+                    .sorted(Comparator.comparing(Path::toString))
+                    .toList();
+        }
+    }
+
     private static boolean isFlowFile(Path file) {
         String name = file.getFileName().toString().toLowerCase(Locale.ROOT);
         return name.endsWith(".msgflow") || name.endsWith(".subflow");
+    }
+
+    private static boolean isEsqlFile(Path file) {
+        return file.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".esql");
     }
 
     /** Имя файла схемы: политика DiagramNames (имя IR без расширения, fallback — stem файла). */

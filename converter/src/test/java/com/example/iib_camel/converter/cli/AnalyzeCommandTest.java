@@ -268,4 +268,75 @@ class AnalyzeCommandTest {
         assertEquals("Composite", AnalyzeCommand.diagramName("Composite", "ignored"));
         assertFalse(AnalyzeCommand.diagramName("Adapter.msgflow", "x").contains("."));
     }
+
+    @Test
+    void esqlInventoryRenderedAlongsideFlowDiagrams(@TempDir Path temp) throws Exception {
+        Path input = temp.resolve("in");
+        Files.createDirectories(input);
+        Files.writeString(input.resolve("Sample.msgflow"), SAMPLE_MSGFLOW);
+        Files.writeString(input.resolve("Adjust.esql"), """
+                BROKER SCHEMA adjust
+                CREATE COMPUTE MODULE Adjust_Compute1
+                  CREATE FUNCTION Main() RETURNS BOOLEAN
+                  BEGIN
+                    SET OutputRoot = InputRoot;
+                    SET OutputRoot.XMLNSC.Order.Status = 'ADJUSTED';
+                    IF InputBody.Order.Status = 'HOLD' THEN
+                      SET OutputRoot.XMLNSC.Order.Status = 'PAUSED';
+                    END IF;
+                    RETURN TRUE;
+                  END;
+                END MODULE;
+                """);
+        Path output = temp.resolve("out");
+
+        assertEquals(0, run("--input", input.toString(), "--output", output.toString()));
+
+        // инвентарь ESQL — системный артефакт «как есть», без бинов/моделей (граница с convert)
+        String inventory = Files.readString(output.resolve("esql-inventory.md"));
+        assertTrue(inventory.contains("Инвентарь ESQL «как есть»"));
+        assertTrue(inventory.contains("| Adjust_Compute1 | COMPUTE | 1 | 2 | 1 | переводимо частично"),
+                "модуль с ветвлением честно помечен частичным");
+        assertTrue(inventory.contains("артефакты перевода (бины, модели) на этой стадии не создаются"),
+                "граница с конвертацией указана в самом отчёте");
+        assertFalse(inventory.contains("CONVERTED"), "статусы конвертации — только в отчёте convert");
+    }
+
+    @Test
+    void esqlOnlyDirectoryRendersInventoryWithExitZero(@TempDir Path temp) throws Exception {
+        Path input = temp.resolve("in");
+        Files.createDirectories(input);
+        Files.writeString(input.resolve("Check.esql"), """
+                BROKER SCHEMA check
+                CREATE COMPUTE MODULE Check_Compute1
+                  CREATE FUNCTION Main() RETURNS BOOLEAN
+                  BEGIN
+                    SET OutputRoot = InputRoot;
+                    RETURN TRUE;
+                  END;
+                END MODULE;
+                """);
+        Path output = temp.resolve("out");
+
+        assertEquals(0, run("--input", input.toString(), "--output", output.toString()));
+        String inventory = Files.readString(output.resolve("esql-inventory.md"));
+        assertTrue(inventory.contains("| Check_Compute1 | COMPUTE | 1 | 1 | 0 | переводимо полностью |"));
+        assertFalse(Files.exists(output.resolve("Check.mmd")), "схем нет — потоков во входе не было");
+    }
+
+    @Test
+    void brokenEsqlCountsAsFailureWithHonestRowAndExit2(@TempDir Path temp) throws Exception {
+        Path input = temp.resolve("in");
+        Files.createDirectories(input);
+        Files.writeString(input.resolve("Sample.msgflow"), SAMPLE_MSGFLOW);
+        Files.writeString(input.resolve("Broken.esql"),
+                "CREATE COMPUTE MODULE Broken\n  CREATE FUNCTION Main()\n  BEGIN RETURN TRUE; END;\n");
+        Path output = temp.resolve("out");
+
+        assertEquals(2, run("--input", input.toString(), "--output", output.toString()));
+
+        String inventory = Files.readString(output.resolve("esql-inventory.md"));
+        assertTrue(inventory.contains("Broken.esql"), "файл с ошибкой попал в отчёт");
+        assertTrue(inventory.contains("ошибка разбора:"), "причина ошибки честно видна");
+    }
 }
