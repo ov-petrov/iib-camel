@@ -2,6 +2,8 @@ package com.example.iib_camel.converter.cli;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import picocli.CommandLine;
 
 import java.nio.file.Files;
@@ -42,6 +44,27 @@ class AnalyzeCommandTest {
 
     private int run(String... args) {
         return new CommandLine(command).execute(args);
+    }
+
+    private static Path orderIntakeExample() {
+        Path relative = Path.of("examples", "analyze", "system", "OrderIntake.msgflow");
+        for (Path directory = Path.of("").toAbsolutePath(); directory != null; directory = directory.getParent()) {
+            Path candidate = directory.resolve(relative);
+            if (Files.isRegularFile(candidate)) {
+                return candidate;
+            }
+        }
+        throw new AssertionError("Could not locate " + relative + " from the current directory");
+    }
+
+    private static String embeddedMermaid(String report) {
+        String marker = "```mermaid";
+        int start = report.indexOf(marker);
+        assertTrue(start >= 0, "Markdown report contains an embedded Mermaid diagram");
+        start += marker.length();
+        int end = report.indexOf("```", start);
+        assertTrue(end >= 0, "Embedded Mermaid diagram is closed");
+        return report.substring(start, end).strip();
     }
 
     private static void deleteRecursively(Path root) throws Exception {
@@ -204,6 +227,21 @@ class AnalyzeCommandTest {
                 "вердикт о покрытии");
         assertTrue(report.contains("FR-2.2, Must"),
                 "перечень поддержанных типов со ссылкой на правила");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"LR", "TB"})
+    void realOrderIntakeFlowEscapesSubflowLabelInEveryMermaidOutput(String orientation,
+                                                                    @TempDir Path output) throws Exception {
+        assertEquals(0, run("--input", orderIntakeExample().toString(), "--output", output.toString(),
+                "--orientation", orientation, "--format", "all"));
+
+        String diagram = Files.readString(output.resolve("OrderIntake.mmd")).strip();
+        String report = Files.readString(output.resolve("OrderIntake.md"));
+
+        assertTrue(diagram.startsWith("flowchart " + orientation));
+        assertTrue(diagram.contains("N5[[\"Audit review (subflow)<br/>Subflow\"]]:::reference"));
+        assertEquals(diagram, embeddedMermaid(report), "Markdown embeds the generated Mermaid diagram verbatim");
     }
 
     @Test

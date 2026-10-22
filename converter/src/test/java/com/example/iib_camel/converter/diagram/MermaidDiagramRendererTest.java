@@ -11,15 +11,11 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Рендерер IR → Mermaid на синтетических моделях (веха M1).
- */
 class MermaidDiagramRendererTest {
 
     private final MermaidDiagramRenderer renderer =
             new MermaidDiagramRenderer(NodeCategoryRegistry.withIibDefaults());
 
-    /** Синтетический аналог корпуса corr-01 («несложный адаптер») — состав взяты из стратегии тестирования. */
     private MsgFlow adapterLikeFlow() {
         FlowNode input = new FlowNode("Input", "MQInput", "Adapter Input",
                 Map.of("queueName", "ADAPTER.IN"), List.of());
@@ -56,10 +52,10 @@ class MermaidDiagramRendererTest {
     @Test
     void edgeCaptioningFollowsD5Rule() {
         String diagram = renderer.render(adapterLikeFlow());
-        assertTrue(diagram.contains("N1 --> N2"));            // out — основной
-        assertTrue(diagram.contains("N3 --> N4"));            // Match — динамический выход Route
-        assertTrue(diagram.contains("N3 --> N5"));            // Default — семейство маршрутизации
-        assertTrue(diagram.contains("N1 -. catch .-> N6"));   // catch — не основной: пунктир + подпись
+        assertTrue(diagram.contains("N1 --> N2"));
+        assertTrue(diagram.contains("N3 --> N4"));
+        assertTrue(diagram.contains("N3 --> N5"));
+        assertTrue(diagram.contains("N1 -. catch .-> N6"));
     }
 
     @Test
@@ -78,7 +74,7 @@ class MermaidDiagramRendererTest {
                 List.of(new FlowNode("S1", "Subflow", "CheckStatus", Map.of(), List.of())),
                 List.of());
         String diagram = renderer.render(flow);
-        assertTrue(diagram.contains("N1[[CheckStatus (subflow)<br/>Subflow]]:::reference"));
+        assertTrue(diagram.contains("N1[[\"CheckStatus (subflow)<br/>Subflow\"]]:::reference"));
         assertTrue(diagram.contains("classDef reference fill:#f9fbe7,stroke:#827717,stroke-width:1px"));
     }
 

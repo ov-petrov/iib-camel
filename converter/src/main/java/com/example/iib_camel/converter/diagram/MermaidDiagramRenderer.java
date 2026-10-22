@@ -5,7 +5,6 @@ import com.example.iib_camel.converter.msgflow.FlowNode;
 import com.example.iib_camel.converter.msgflow.MsgFlow;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -13,23 +12,11 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * Рендерер топологии потока (IR) в текстовую диаграмму Mermaid
- * (docs/diagram-renderer-design.ru.md, раздел 4).
- *
- * Детерминированный вывод (D-3, D-4): идентификаторы узлов N1..Nk присваиваются по порядку
- * объявления в IR, случайность и системное время отсутствуют, обход — только по упорядоченным
- * коллекциям. Вывод завершается переводом строки; Viridная колонка indentation — 4 пробела.
- *
- * Правило терминалов (D-5): ребро подписывается и рисуется пунктиром, если терминал источника
- * не «основной». Основные: пустой терминал, "out", перечисленный в dynamicOutTerminals узла-источника
- * (данные IR), а для семейства маршрутизации — стартующие с "match" и "default".
- */
+/** Детерминированная Mermaid-схема; правила терминалов — docs/diagram-renderer-design.ru.md, D-5. */
 public final class MermaidDiagramRenderer {
 
     private static final Map<NodeCategory, String> CLASS_DEFS = buildClassDefs();
 
-    /** kind узлов семейства маршрутизации — у них «рабочие» выходы match и default. */
     private static final Set<String> ROUTE_KINDS = Set.of("route", "router", "routetolabel", "filter");
 
     private final NodeCategoryRegistry registry;
@@ -62,7 +49,7 @@ public final class MermaidDiagramRenderer {
         }
         for (FlowConnection connection : flow.connections()) {
             if (!ids.containsKey(connection.sourceNodeId()) || !ids.containsKey(connection.targetNodeId())) {
-                continue; // защитный пропуск: парсер IR не допускает «висячих» связей
+                continue;
             }
             FlowNode source = byId.get(connection.sourceNodeId());
             String from = ids.get(connection.sourceNodeId());
@@ -83,20 +70,19 @@ public final class MermaidDiagramRenderer {
         return out.toString();
     }
 
-    /** Описание узла: прямоугольник, ссылка на подпоток — параллелограмм-«каталог» [[...]]. */
     private String nodeShape(FlowNode node) {
-        String label = labelOf(node);
+        // Кавычки защищают текст от разбора как синтаксиса Mermaid, включая (subflow).
+        String label = "\"" + labelOf(node) + "\"";
         NodeCategory category = categoryOf(node);
         return category == NodeCategory.REFERENCE
                 ? "[[" + label + "]]"
-                : "[\"" + label + "\"]";
+                : "[" + label + "]";
     }
 
     private NodeCategory categoryOf(FlowNode node) {
         return registry.categorize(node.kind());
     }
 
-    /** Ярлык узла: имя (c пометкой для подпотоков), затем type, затем кадры-безопасные свойства (D-6). */
     private static String labelOf(FlowNode node) {
         List<String> parts = new ArrayList<>();
         String name = node.label().isBlank() ? node.id() : node.label();
@@ -113,10 +99,6 @@ public final class MermaidDiagramRenderer {
         return String.join("<br/>", parts);
     }
 
-    /**
-     * Дополнительная строка ярлыка — самое содержательное свойство узла (A5):
-     * очередь для ввода/вывода либо ESQL-модуль для Compute.
-     */
     private static String caption(Map<String, String> properties) {
         String queue = properties.get("queueName");
         if (queue != null && !queue.isBlank()) {
@@ -124,13 +106,11 @@ public final class MermaidDiagramRenderer {
         }
         String expression = properties.get("computeExpression");
         if (expression != null && expression.contains("#")) {
-            // esql://routine/adapter#Adapter_Compute1.Main -> Adapter_Compute1.Main
             return expression.substring(expression.indexOf('#') + 1);
         }
         return null;
     }
 
-    /** Основной ли у источника выходной терминал (см. D-5 в javadoc класса). */
     private static boolean isPrimaryOutput(FlowNode source, FlowConnection connection) {
         String terminal = connection.sourceTerminal();
         String normalized = terminal == null ? "" : terminal.toLowerCase(Locale.ROOT);
@@ -147,7 +127,6 @@ public final class MermaidDiagramRenderer {
                 && (normalized.startsWith("match") || normalized.equals("default"));
     }
 
-    /** Имя classDef в нижнем регистре — вход в {NodeCategory#ordinal()}. */
     private static String classKey(NodeCategory category) {
         return category.name().toLowerCase(Locale.ROOT);
     }
