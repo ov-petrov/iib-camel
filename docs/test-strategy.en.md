@@ -91,6 +91,12 @@ Internal units are tested: parsers, translators, generators.
   including a function correspondence table (`CAST`, `SUBSTRING`, `CONCAT`, `UPPER`…).
 - **XML/Java/MapStruct generators.** Verify output fragments structure and declarations on short
   fixtures producing short fragments.
+- **ESQL inventory of the `analyze` command (EsqlInventoryRenderer, 2026-10).** Table-driven tests of
+  the as-is verdicts: module within the subset → "fully translatable", module with branching or a
+  function other than Main → "partially translatable (N statements translated)", no `Main`/FILTER →
+  "out of subset", parse error → honest row plus accounting in the exit code; determinism (same
+  input → byte-identical document, D-3). CLI contract (`AnalyzeCommandTest`): `esql-inventory.md`
+  next to diagrams, esql-only directory → exit `0`, broken ESQL → exit `2`.
 
 ### 3.2. Level 2 — golden tests: "XML is converted identically" (Must)
 

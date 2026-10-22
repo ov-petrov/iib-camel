@@ -178,13 +178,20 @@ java -jar converter.jar analyze [--input <file|dir>] [--output <dir>]
                                 [--orientation LR|TB] [--format mermaid|adoc|md|all] [--fail-fast]
 ```
 
-- `--input` — a `.msgflow`/`.subflow` file or a directory (recursive walk, only these extensions);
-  default `./input` relative to the current directory. Satisfies FR-1.2 (batch processing)
-  by construction.
+- `--input` — a `.msgflow`/`.subflow`/`.esql` file or a directory (recursive walk); default
+  `./input` relative to the current directory. Satisfies FR-1.2 (batch processing) by construction.
 - `--output` — output directory, default `./output` (created if missing); each artifact →
   `<name>.mmd`, `<name>.adoc` or `<name>.md` (per `--format`, see 4.4).
 - `--format` — output format: `all` (default — all three), `mermaid`, `adoc` or `md`
   (inventory report, D-8).
+- **ESQL inventory** (2026-10): for the `.esql` files of the input a system-wide
+  `esql-inventory.md` is additionally produced — the as-is landscape of all modules: a table
+  (file, module, type, function count, SET statements, constructs outside the subset) plus a
+  translateability verdict per FR-3.2 (full / partial / out of subset; no `Main` → out).
+  Conversion artifacts (beans, models) are NOT created at this stage — the boundary with the
+  `convert` report (FR-5.1) is stated in the document itself. A single `.esql` file is accepted
+  as input as well — then no diagrams are produced, only the inventory (exit code `0` on a
+  successful parse).
 - Diagnostics (FR-1.3): `path:line: message` on stderr; summary on stdout
   (files, nodes, edges, warnings).
 - **Exit codes:** `0` — everything rendered; `1` — invalid arguments; `2` — partial success
