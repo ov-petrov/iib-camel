@@ -292,14 +292,17 @@ camel.main.routes-include-pattern = classpath:camel/*.xml
 ```bash
 cp converted/beans/CheckCompute1.java \
    runtime/src/main/java/com/example/iib_camel/runtime/generated/
+# и модели тела, если конвертер их создал (FR-3.4, первый уровень):
+cp converted/models/Order.java \
+   runtime/src/main/java/com/example/iib_camel/runtime/generated/model/
 ```
 
-Бин зависит от `EsqlRuntimeSupport` (runtime, уже в наличии): `esql.copy` — перенос тела,
-`esql.mqmd` — MQMD-поле как JMS-свойство, `esql.setBodyField` — правка XML-дерева.
-Проверьте статус модуля в отчёте: `конвертировано` — бин готов к использованию без правок
-(пример corr-02: `Check_Compute1`); `частично` — внутри метода останутся
-`// TODO (FR-3.3)`-заглушки, доработайте ветвления вручную (пример corr-03: `Adjust_Compute1`);
-`требует ручной доработки` — бин не сгенерирован, пишите его сами.
+Сгенерированный бин наследует `AbstractComputeBean`
+(`runtime/src/main/java/com/example/iib_camel/runtime/compute/`): `copy` — перенос тела,
+`mqmd` — MQMD-поле как JMS-свойство, `setBodyField` — правка XML-дерева; публичный шлюз
+`compute(Exchange)` помечен `@Handler` (однозначный выбор метода Camel). Если модуль вне
+переводимого подмножества и бин не сгенерирован — пишите бин вручную по шаблону
+`runtime/compute/AdapterCompute1.java`.
 
 Для модулей вне переводимого подмножества реализуйте бин вручную — по шаблону
 `runtime/src/main/java/com/example/iib_camel/runtime/compute/AdapterCompute1.java`:
@@ -315,6 +318,12 @@ public class AdapterCompute1 {
         // 2. аналог SET OutputRoot.MQMD.ApplicationIdData = 'IIB-CAMEL-MIG'
         exchange.getIn().setHeader("ApplicationIdData", "IIB-CAMEL-MIG");
         return adapter;
+```
+
+Статус модуля в отчёте определяет, что делать с сгенерированным бином:
+`конвертировано` — бин готов без правок (corr-02); `частично` — внутри останутся
+`// TODO (FR-3.3)`-заглушки, доработайте ветвления вручную (corr-03); `требует ручной
+доработки` — пишите бин сами (см. шаблон выше).
     }
 }
 ```

@@ -82,7 +82,7 @@ public final class EsqlTranslator {
         if (isCopyWholeMessage(target, value)) {
             return new StatementTranslation(
                     original(assignment),
-                    "esql.copy(exchange);",
+                    "copy(exchange);",
                     UnitStatus.CONVERTED,
                     "тело переносится без изменений (pass-through)");
         }
@@ -109,7 +109,7 @@ public final class EsqlTranslator {
             String note = "OutputRoot.MQMD." + mqmd.group(1);
             return new StatementTranslation(
                     original(assignment),
-                    "esql.mqmd(exchange, \"" + mqmd.group(1) + "\", \"" + escape(value) + "\");",
+                    "mqmd(exchange, \"" + mqmd.group(1) + "\", \"" + escape(value) + "\");",
                     UnitStatus.CONVERTED,
                     castNote == null ? note + " → JMS-свойство"
                                      : note + " → JMS-свойство (" + castNote + ")");
@@ -120,7 +120,7 @@ public final class EsqlTranslator {
             String note = "OutputRoot." + body.group(1) + "." + path;
             return new StatementTranslation(
                     original(assignment),
-                    "esql.setBodyField(exchange, \"" + path + "\", \"" + escape(value) + "\");",
+                    "setBodyField(exchange, \"" + path + "\", \"" + escape(value) + "\");",
                     UnitStatus.CONVERTED,
                     castNote == null ? note + " → поле тела XML"
                                      : note + " → поле тела XML (" + castNote + ")");

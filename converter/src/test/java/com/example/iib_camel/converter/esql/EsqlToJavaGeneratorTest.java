@@ -29,14 +29,15 @@ class EsqlToJavaGeneratorTest {
                 "пакет сгенерированных бинов");
         assertTrue(java.contains("@Component(\"checkCompute1\")"),
                 "bean-ссылка маршрута (bean:checkCompute1) разрешается аннотацией");
-        assertTrue(java.contains("public class CheckCompute1"));
-        assertTrue(java.contains("public void compute(Exchange exchange)"),
-                "точка входа — аналог ESQL Main");
-        // операторы с трассируемым оригиналом
-        assertTrue(java.contains("// SET OutputRoot = InputRoot;\n        esql.copy(exchange);"));
+        assertTrue(java.contains("public class CheckCompute1 extends AbstractComputeBean"),
+                "бин наследует базовый класс с protected-поддержкой");
+        assertTrue(java.contains("protected void main(Exchange exchange)"),
+                "точка входа — аналог ESQL Main (шлюз compute() в базовом классе)");
+        // операторы с трассируемым оригиналом (protected-методы базового класса)
+        assertTrue(java.contains("// SET OutputRoot = InputRoot;\n        copy(exchange);"));
         assertTrue(java.contains(
                 "// SET OutputRoot.MQMD.CommentField = 'CHECKED-BY-SUBFLOW';\n"
-                + "        esql.mqmd(exchange, \"CommentField\", \"CHECKED-BY-SUBFLOW\");"));
+                + "        mqmd(exchange, \"CommentField\", \"CHECKED-BY-SUBFLOW\");"));
         assertFalse(java.contains("TODO"), "полный перевод — TODO нет");
     }
 
@@ -87,6 +88,42 @@ class EsqlToJavaGeneratorTest {
         var ex = assertThrows(IllegalArgumentException.class,
                 () -> new EsqlToJavaGenerator().generate(new EsqlParser().parse(esql)));
         assertTrue(ex.getMessage().contains("Main"), "причина отказа — нет функции Main");
+    }
+
+    @Test
+    void generatesBodyModelFromTreeAccesses() {
+        String esql = """
+                BROKER SCHEMA adjust
+                CREATE COMPUTE MODULE Adjust_Compute1
+                  CREATE FUNCTION Main() RETURNS BOOLEAN
+                  BEGIN
+                    SET OutputRoot = InputRoot;
+                    SET OutputRoot.XMLNSC.Order.Status = 'ADJUSTED';
+                    SET OutputRoot.XMLNSC.Order.Rating = CAST('100' AS DECIMAL);
+                    RETURN TRUE;
+                  END;
+                END MODULE;
+                """;
+        var bean = new EsqlToJavaGenerator().generate(new EsqlParser().parse(esql));
+
+        assertEquals(1, bean.models().size(), "одна модель: корень Order");
+        var model = bean.models().getFirst();
+        assertEquals("Order", model.className());
+        assertTrue(model.java().startsWith("package com.example.iib_camel.runtime.generated.model;\n\n"),
+                "модели — под-пакет generated.model");
+        assertTrue(model.java().contains("private String Status;"), "поле из ESQL-пути Order.Status");
+        assertTrue(model.java().contains("private String Rating;"),
+                "поле из ESQL-пути Order.Rating (CAST)");
+        assertTrue(model.java().contains("CAST('100' AS DECIMAL)"),
+                "источник поля виден в javadoc-комментарии");
+        assertTrue(model.java().contains("FR-3.4"), "модель помечена уровнем FR-3.4");
+    }
+
+    @Test
+    void noModelsWhenModuleTouchesOnlyMqmd() {
+        var bean = new EsqlToJavaGenerator().generate(corr02Module());
+        assertTrue(bean.models().isEmpty(),
+                "корень + MQMD — обращений к телу нет, модели не генерируются");
     }
 
     private static EsqlModule corr02Module() {

@@ -122,6 +122,15 @@ class ConvertCommandTest {
         assertEquals(goldenBean, Files.readString(output.resolve("beans/AdjustCompute1.java"),
                 StandardCharsets.UTF_8), "бин побайтово равен golden (D-3)");
 
+        // POJO-модель тела (FR-3.4, первый уровень) — надглазурное сравнение
+        String goldenModel = Files.readString(
+                Path.of("src/test/resources/corpus/corr-03-esql-mapping/expected/models/Order.java"),
+                StandardCharsets.UTF_8);
+        assertEquals(goldenModel, Files.readString(output.resolve("models/Order.java"),
+                StandardCharsets.UTF_8), "модель побайтово равна golden");
+        assertTrue(goldenModel.contains("private String Status;"));
+        assertTrue(goldenModel.contains("private String Rating;"));
+
         String report = Files.readString(output.resolve("migration-report.md"), StandardCharsets.UTF_8);
         assertTrue(report.contains("| Adjust_Compute1.esql | Adjust_Compute1 | 1 | 4 | частично |"),
                 "модуль с непереводимым ветвлением — статус «частично» (FR-3.3)");
@@ -131,6 +140,9 @@ class ConvertCommandTest {
         assertTrue(report.contains("(тип DECIMAL)"), "тип CAST зафиксирован примечанием");
         assertTrue(report.contains("Непереводимые конструкции `Adjust_Compute1`"),
                 "причины непереводимости поимённо в отчёте");
+        assertTrue(report.contains("POJO-модели тела (FR-3.4, первый уровень) для `Adjust_Compute1`"),
+                "модели перечислены в отчёте");
+        assertTrue(report.contains("`models/Order.java`"), "файл модели виден в отчёте");
         assertTrue(goldenBean.contains("// TODO (FR-3.3): IF InputBody.Order.Status = 'HOLD'"),
                 "непереводимое ветвление видно в бине (golden-сравнение бина выше)");
         // непереводимых единиц нет: все операторы, попавшие в бин, переведены; требует внимания — ветвление

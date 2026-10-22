@@ -25,7 +25,11 @@ java -jar converter.jar convert --input converter/src/test/resources/corpus/corr
 
 - `/tmp/adj/Adjust-route.xml` — побайтово равен `expected/Adjust-route.xml` (golden);
 - `/tmp/adj/beans/AdjustCompute1.java` — побайтово равен `expected/AdjustCompute1.java`,
-  4 переведённых оператора + `// TODO (FR-3.3): IF …`;
+  4 переведённых оператора + `// TODO (FR-3.3): IF …`; бин наследует `AbstractComputeBean`
+  (поддержка операторов — protected-методы, шлюз `compute(Exchange)` помечен `@Handler`);
+- `/tmp/adj/models/Order.java` — POJO-модель тела (FR-3.4, первый уровень), побайтово
+  равна `expected/models/Order.java`: поля `Status`/`Rating` восстановлены из ESQL-путей
+  (компромисс: типы String, поведение правит тело динамически);
 - `migration-report.md`: модуль `Adjust_Compute1` — статус **«частично»**, таблица «Операторы ESQL»
   — 4 × «конвертировано», полнота автоматизации **80.0%** (4 из 5 единиц конвертировано).
 

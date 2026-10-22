@@ -69,7 +69,7 @@ public final class ConvertCommand implements Callable<Integer> {
     /** Единица «модуль ESQL» для отчёта (FR-3.2): статус перевода + сгенерированный бин. */
     record EsqlUnit(String file, String module, List<String> functions,
                     List<OperatorRow> operators, UnitStatus status, String note,
-                    List<String> issues) {
+                    List<String> issues, List<String> models) {
     }
 
     /** Единица «оператор ESQL» для отчёта: статус перевода и примечание (FR-5.2). */
@@ -146,12 +146,20 @@ public final class ConvertCommand implements Callable<Integer> {
                     UnitStatus unitStatus = UnitStatus.MANUAL;
                     String unitNote = "перевод не выполнен";
                     List<String> issues = List.of();
+                    EsqlToJavaGenerator.BeanResult bean = null;
                     try {
-                        EsqlToJavaGenerator.BeanResult bean = generator.generate(m);
+                        bean = generator.generate(m);
                         issues = List.copyOf(bean.issues());
                         Files.createDirectories(beansDir);
                         Files.writeString(beansDir.resolve(bean.className() + ".java"),
                                 bean.java(), StandardCharsets.UTF_8);
+                        // POJO-модели тела (FR-3.4, первый уровень) — соседний каталог models/
+                        for (EsqlToJavaGenerator.ModelResult model : bean.models()) {
+                            Files.createDirectories(output.resolve("models"));
+                            Files.writeString(
+                                    output.resolve("models").resolve(model.className() + ".java"),
+                                    model.java(), StandardCharsets.UTF_8);
+                        }
                         for (EsqlTranslator.StatementTranslation st : bean.statements()) {
                             operators.add(new OperatorRow(
                                     m.name(), "Main", st.esql(), st.status(), st.note()));
@@ -177,7 +185,10 @@ public final class ConvertCommand implements Callable<Integer> {
                     }
                     esqlUnits.add(new EsqlUnit(file.getFileName().toString(), m.name(),
                             m.functions().stream().map(EsqlFunction::name).toList(),
-                            List.copyOf(operators), unitStatus, unitNote, issues));
+                            List.copyOf(operators), unitStatus, unitNote, issues,
+                            bean == null ? List.of()
+                                    : bean.models().stream().map(x -> "models/" + x.className() + ".java")
+                                            .toList()));
                 }
             } catch (Exception e) {
                 errors.add(file + ": " + e.getMessage());
@@ -340,6 +351,12 @@ public final class ConvertCommand implements Callable<Integer> {
             if (!u.issues().isEmpty()) {
                 report.append("\nНепереводимые конструкции `").append(u.module()).append("`:\n\n");
                 u.issues().forEach(i -> report.append("- ").append(i).append('\n'));
+                report.append('\n');
+            }
+            if (!u.models().isEmpty()) {
+                report.append("\nPOJO-модели тела (FR-3.4, первый уровень) для `").append(u.module())
+                        .append("`:\n\n");
+                u.models().forEach(m -> report.append("- `").append(m).append("`\n"));
                 report.append('\n');
             }
         }

@@ -153,14 +153,21 @@ The system is used:
 
   Implementation status (2026-10-22): the first automated translation level works. The converter
   generates Spring beans from Compute modules (FR-3.5 "node ↔ method" scope): `bean id = camelize(module)`,
-  `compute(Exchange)` method, statements carried over with the traceable original (`// SET …`). The
-  FR-3.2 convertible subset: `SET OutputRoot = InputRoot` (pass-through), `SET OutputRoot.MQMD.<F> =
-  '<s>'` (JMS property), `SET OutputRoot.<domain>.<Path> = '<s>'` (XML body tree edit), `CAST('<lit>'
-  AS T)` (literal + type note). Branching `IF/WHILE`, `CALL`, `THROW`, functions other than Main and
-  FILTER modules — honest "partial" status: TODO stubs in the bean with the source statement text and
-  causes in the report (FR-3.3); SET statements inside branches are never emitted as unconditional
-  code. ULM model generation (FR-3.4) is out of scope for this level (body fields are edited
-  dynamically via runtime support).
+  the bean extends `AbstractComputeBean` (protected `copy`/`mqmd`/`setBodyField`; the public
+  `compute(Exchange)` gateway annotated `@Handler`), statements carried over with the traceable
+  original (`// SET …`). The FR-3.2 convertible subset: `SET OutputRoot = InputRoot` (pass-through),
+  `SET OutputRoot.MQMD.<F> = '<s>'` (JMS property), `SET OutputRoot.<domain>.<Path> = '<s>'`
+  (XML body tree edit), `CAST('<lit>' AS T)` (literal + type note). Branching `IF/WHILE`, `CALL`,
+  `THROW`, functions other than Main and FILTER modules — honest "partial" status: TODO stubs in
+  the bean with the source statement text and causes in the report (FR-3.3); SET statements inside
+  branches are never emitted as unconditional code.
+
+  FR-3.4 status (2026-10-22): first level — the converter generates POJO body models
+  (`output/models/`, package `runtime.generated.model`): one class per ESQL path root, String fields
+  with javadoc references to the originating statements. Compromises: types are not inferred
+  (CAST stays a string), bean behavior edits the body dynamically (not via the model), deeper paths
+  are flattened. Models are a visual basis for future FR-4.1 mappers; the full ULM output
+  (per Message Set) remains out of scope for this level.
 
 ### 3.4. MapStruct mapper generation
 

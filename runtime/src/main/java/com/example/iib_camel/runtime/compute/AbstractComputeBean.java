@@ -10,15 +10,17 @@ import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.camel.Exchange;
+import org.apache.camel.Handler;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 
 /**
- * Исполняющая поддержка сгенерированных Compute-бинов (FR-3.2 → FR-R3.1).
+ * Базовый класс сгенерированных Compute-бинов (FR-3.2 → FR-R3.1).
  *
- * Бины, сгенерированные конвертером из ESQL (package
- * {@code com.example.iib_camel.runtime.generated}), вызывают только эти методы —
- * так семантика ESQL-операторов сосредоточена в одном проверяемом месте:
+ * Бины, сгенерированные конвертером из ESQL
+ * (package {@code com.example.iib_camel.runtime.generated}), наследуют этот класс
+ * и используют защищённые методы — семантика ESQL-операторов сосредоточена
+ * в одном проверяемом месте:
  *
  *   SET OutputRoot = InputRoot;                      → {@link #copy(Exchange)} —
  *                                                      тело переносится как есть
@@ -26,32 +28,35 @@ import org.w3c.dom.Element;
  *   SET OutputRoot.MQMD.'<F>' = '<S>';               → {@link #mqmd(Exchange, String, String)} —
  *                                                      MQMD-поле живёт как JMS-свойство сообщения;
  *   SET OutputRoot.XMLNSC.<Path> = '<S>';            → {@link #setBodyField(Exchange, String, String)} —
- *                                                      правка XML-дерева тела (джексон readTree/put).
+ *                                                      правка XML-дерева тела (DOM: имена, порядок
+ *                                                      и пробелы узлов сохраняются).
  *
- * Некорректный XML в setBodyField → исключение → маршрутного doCatch → очередь ошибок
+ * Некорректный XML в setBodyField → исключение → маршрутный doCatch → очередь ошибок
  * (поведение как в IIB Compute: сбой преобразования не остаётся незамеченным).
  */
 @Slf4j
-public class EsqlRuntimeSupport {
+public abstract class AbstractComputeBean {
 
-    /** Спуск по прямым детям (без поиска по поддереву) — предсказуемая правка (D-3). */
-    private static Element directChild(Element parent, String name) {
-        var children = parent.getChildNodes();
-        for (int i = 0; i < children.getLength(); i++) {
-            if (children.item(i) instanceof Element el && el.getTagName().equals(name)) {
-                return el;
-            }
-        }
-        return null;
+    /**
+     * Единственная публичная точка вызова маршрута (RouteGenerator ссылается bean:<id> →
+     * compute(Exchange)). Финальная и помечена @Handler — Camel выбирает её однозначно,
+     * без перебора protected-методов поддержки (AmbiguousMethodCallException).
+     */
+    @Handler
+    public final void compute(Exchange exchange) {
+        main(exchange);
     }
 
+    /** Аналог ESQL Main(). Реализуется сгенерированным бином. */
+    protected abstract void main(Exchange exchange);
+
     /** SET OutputRoot = InputRoot — тело проходит без изменений; отдельного кода не нужно. */
-    public void copy(Exchange exchange) {
+    protected void copy(Exchange exchange) {
         // pass-through: изменение не требуется, вызов оставлен для трассируемости сгенерированного кода
     }
 
     /** SET OutputRoot.MQMD.<field> = value — MQMD-поле как JMS-свойство (напр. ApplicationIdData). */
-    public void mqmd(Exchange exchange, String field, String value) {
+    protected void mqmd(Exchange exchange, String field, String value) {
         exchange.getIn().setHeader(field, value);
         log.debug("MQMD.{} = {}", field, value);
     }
@@ -61,7 +66,7 @@ public class EsqlRuntimeSupport {
      * (путь задаётся без корневого элемента: «Order.Status» — вложенность под корнем).
      * DOM-правка: имена и порядок узлов сохраняются, недостающие уровни создаются.
      */
-    public void setBodyField(Exchange exchange, String path, String value) {
+    protected void setBodyField(Exchange exchange, String path, String value) {
         try {
             String body = exchange.getIn().getBody(String.class);
             if (body == null || body.isBlank()) {
@@ -97,5 +102,16 @@ public class EsqlRuntimeSupport {
         } catch (Exception e) {
             throw new IllegalStateException("setBodyField(" + path + "): " + e.getMessage(), e);
         }
+    }
+
+    /** Спуск по прямым детям (без поиска по поддереву) — предсказуемая правка (D-3). */
+    private static Element directChild(Element parent, String name) {
+        var children = parent.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            if (children.item(i) instanceof Element el && el.getTagName().equals(name)) {
+                return el;
+            }
+        }
+        return null;
     }
 }

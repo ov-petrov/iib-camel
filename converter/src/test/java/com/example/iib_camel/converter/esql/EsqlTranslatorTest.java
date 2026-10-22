@@ -36,10 +36,10 @@ class EsqlTranslatorTest {
         var copy = t.statements().get(0);
         assertEquals(UnitStatus.CONVERTED, copy.status());
         assertEquals("SET OutputRoot = InputRoot;", copy.esql());
-        assertEquals("esql.copy(exchange);", copy.java());
+        assertEquals("copy(exchange);", copy.java());
 
         var mqmd = t.statements().get(1);
-        assertEquals("esql.mqmd(exchange, \"CommentField\", \"CHECKED-BY-SUBFLOW\");", mqmd.java());
+        assertEquals("mqmd(exchange, \"CommentField\", \"CHECKED-BY-SUBFLOW\");", mqmd.java());
     }
 
     @Test
@@ -58,9 +58,9 @@ class EsqlTranslatorTest {
         var t = new EsqlTranslator(main).translate();
 
         assertTrue(t.complete(), "строковое поле тела и CAST-литерал входят в подмножество");
-        assertEquals("esql.setBodyField(exchange, \"Order.Status\", \"ACTIVE\");",
+        assertEquals("setBodyField(exchange, \"Order.Status\", \"ACTIVE\");",
                 t.statements().get(0).java());
-        assertEquals("esql.setBodyField(exchange, \"Order.Amount\", \"250\");",
+        assertEquals("setBodyField(exchange, \"Order.Amount\", \"250\");",
                 t.statements().get(1).java());
         assertTrue(t.statements().get(1).note().contains("CAST"));
         assertTrue(t.statements().get(1).note().contains("DECIMAL"));
