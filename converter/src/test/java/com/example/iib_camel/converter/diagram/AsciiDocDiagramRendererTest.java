@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -41,20 +42,14 @@ class AsciiDocDiagramRendererTest {
 
         assertTrue(doc.startsWith("// Сгенерировано конвертером iib-camel"));
         assertTrue(doc.contains("= Adapter\n"));
-        assertTrue(doc.contains("== Диаграмма\n"));
-        assertTrue(doc.contains("MQInput «Adapter Input» [ADAPTER.IN]")); // дерево-конспект в листинге
+        assertTrue(doc.contains("== Схема\n"), "отсылка к .mmd вместо ASCII-дерева");
+        assertTrue(doc.contains("Adapter.mmd"));
+        assertFalse(doc.contains("MQInput «Adapter Input» [ADAPTER.IN]"),
+                "листинг «дерева-конспекта» удалён вместе с ASCII-форматом");
         assertTrue(doc.contains("== Узлы\n"));
         assertTrue(doc.contains("| Input | MQInput | Adapter Input | queueName = ADAPTER.IN"));
         assertTrue(doc.contains("| RouteByStatus | Default | DefaultQueue | in"));
         assertTrue(doc.contains("== Связи\n"));
-    }
-
-    @Test
-    void literacyTreeIsNestedInsideListingBlock() {
-        String doc = renderer.render(adapterLikeFlow());
-        int listing = doc.indexOf("----\n");
-        assertTrue(listing > 0);
-        assertTrue(doc.indexOf("----\n", listing + 1) > doc.indexOf("MQInput «Adapter Input» [ADAPTER.IN]"));
     }
 
     @Test

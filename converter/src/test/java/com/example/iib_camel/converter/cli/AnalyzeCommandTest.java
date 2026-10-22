@@ -14,10 +14,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Контракт CLI-команды diagram (дизайн-документ, раздел 5):
- * коды возврата 0/1/2/3, выходной файл .mmd, коллизии имён.
+ * Контракт CLI-команды analyze (дизайн-документ, раздел 5):
+ * коды возврата 0/1/2/3, артефакты .mmd/.adoc/.md, коллизии имён,
+ * дефолты ./input → ./output (все три формата).
  */
-class DiagramCommandTest {
+class AnalyzeCommandTest {
 
     private static final String SAMPLE_MSGFLOW = """
             <?xml version="1.0" encoding="UTF-8"?>
@@ -41,7 +42,7 @@ class DiagramCommandTest {
 
     private static final String BROKEN_MSGFLOW = "<ecore:EPackage xmlns:ecore=\"http://www.eclipse.org/emf/2002/Ecore\"";
 
-    private final DiagramCommand command = new DiagramCommand();
+    private final AnalyzeCommand command = new AnalyzeCommand();
 
     private int run(String... args) {
         return new CommandLine(command).execute(args);
@@ -133,8 +134,8 @@ class DiagramCommandTest {
         assertEquals(0, run("--input", input.toString(), "--output", output.toString()));
 
         assertTrue(Files.exists(output.resolve("Sample.mmd")));
-        assertTrue(Files.exists(output.resolve("Sample.ascii")));
         assertTrue(Files.exists(output.resolve("Sample.adoc")));
+        assertTrue(Files.exists(output.resolve("Sample.md")));
     }
 
     @Test
@@ -146,8 +147,8 @@ class DiagramCommandTest {
         try {
             assertEquals(0, run());
             assertTrue(Files.exists(output.resolve("Sample.mmd")), "дефолт --output: ./output");
-            assertTrue(Files.exists(output.resolve("Sample.ascii")));
             assertTrue(Files.exists(output.resolve("Sample.adoc")));
+            assertTrue(Files.exists(output.resolve("Sample.md")));
         } finally {
             deleteRecursively(input);
             deleteRecursively(output);
@@ -171,21 +172,6 @@ class DiagramCommandTest {
     }
 
     @Test
-    void asciiFormatWritesAsciiFile(@TempDir Path temp) throws Exception {
-        Path input = temp.resolve("in");
-        Files.createDirectories(input);
-        Files.writeString(input.resolve("Sample.msgflow"), SAMPLE_MSGFLOW);
-        Path output = temp.resolve("out");
-
-        assertEquals(0, run("--input", input.toString(), "--output", output.toString(),
-                "--format", "ascii"));
-
-        String content = Files.readString(output.resolve("Sample.ascii"));
-        assertTrue(content.contains("MQInput «Sample Input» [SAMPLE.IN]"));
-        assertTrue(content.contains("└─ out → MQOutput «Sample Output» [SAMPLE.OUT]"));
-    }
-
-    @Test
     void adocFormatWritesAsciiDocDocument(@TempDir Path temp) throws Exception {
         Path input = temp.resolve("in");
         Files.createDirectories(input);
@@ -197,8 +183,52 @@ class DiagramCommandTest {
 
         String content = Files.readString(output.resolve("Sample.adoc"));
         assertTrue(content.contains("= Sample"));
-        assertTrue(content.contains("MQInput «Sample Input» [SAMPLE.IN]"));
-        assertTrue(content.contains("| In | MQInput | Sample Input | queueName = SAMPLE.IN"));
+        assertTrue(content.contains("| In | MQInput | Sample Input | queueName = SAMPLE.IN"),
+                "таблица узлов с ключевым свойством");
+        assertFalse(content.contains("Дерево-конспект"),
+                "мутный термин из прежней версии исчез");
+    }
+
+    @Test
+    void mdReportEmbedsMermaidAndMigrationReadinessVerdict(@TempDir Path temp) throws Exception {
+        Path input = temp.resolve("in");
+        Files.createDirectories(input);
+        Files.writeString(input.resolve("Sample.msgflow"), SAMPLE_MSGFLOW);
+        Path output = temp.resolve("out");
+
+        assertEquals(0, run("--input", input.toString(), "--output", output.toString(),
+                "--format", "md"));
+
+        String report = Files.readString(output.resolve("Sample.md"));
+        assertTrue(report.contains("# Инвентаризация «как есть»: Sample"));
+        assertTrue(report.contains("```mermaid"), "топология встроена в отчёт");
+        assertTrue(report.contains("N1 --> N2"));
+        assertTrue(report.contains("| `In` | MQInput | ввод | queueName = SAMPLE.IN | да |"));
+        assertTrue(report.contains("Обработка всех узлов IIB предусмотрена конвертером: **да** (2 из 2 узлов)"),
+                "вердикт о покрытии");
+        assertTrue(report.contains("FR-2.2, Must"),
+                "перечень поддержанных типов со ссылкой на правила");
+    }
+
+    @Test
+    void mdReportFlagsUnsupportedKindAndNegativeVerdict(@TempDir Path temp) throws Exception {
+        String withTrace = SAMPLE_MSGFLOW.replace(
+                "<connections ",
+                "<nodes xmi:type=\"ComIbmTrace.msgnode:FCMComposite_1\" xmi:id=\"Trace\"/> <connections ");
+        Path input = temp.resolve("in");
+        Files.createDirectories(input);
+        Files.writeString(input.resolve("Sample.msgflow"), withTrace);
+        Path output = temp.resolve("out");
+
+        assertEquals(0, run("--input", input.toString(), "--output", output.toString(),
+                "--format", "md"));
+
+        String report = Files.readString(output.resolve("Sample.md"));
+        assertTrue(report.contains("| `Trace` | Trace | обработка | — | нет (ручная миграция) |"),
+                "узел вне SUPPORTED_BASE_KINDS помечен честно");
+        assertTrue(report.contains("Обработка всех узлов IIB предусмотрена конвертером: **нет** (2 из 3 узлов)"));
+        assertTrue(report.contains("Типы вне покрытия (**1**): Trace"), "какие сущности вне покрытия");
+        assertTrue(report.contains("FR-2.7"), "пути решения: ручная миграция или расширение правил");
     }
 
     @Test
@@ -212,10 +242,10 @@ class DiagramCommandTest {
 
     @Test
     void diagramNameStripsExtensionsAndFallsBackToStem() {
-        assertEquals("Adapter", DiagramCommand.diagramName("Adapter.msgflow", "Adapter"));
-        assertEquals("Check", DiagramCommand.diagramName("Check.subflow", "Check"));
-        assertEquals("Stem", DiagramCommand.diagramName("   ", "Stem"));
-        assertEquals("Composite", DiagramCommand.diagramName("Composite", "ignored"));
-        assertFalse(DiagramCommand.diagramName("Adapter.msgflow", "x").contains("."));
+        assertEquals("Adapter", AnalyzeCommand.diagramName("Adapter.msgflow", "Adapter"));
+        assertEquals("Check", AnalyzeCommand.diagramName("Check.subflow", "Check"));
+        assertEquals("Stem", AnalyzeCommand.diagramName("   ", "Stem"));
+        assertEquals("Composite", AnalyzeCommand.diagramName("Composite", "ignored"));
+        assertFalse(AnalyzeCommand.diagramName("Adapter.msgflow", "x").contains("."));
     }
 }

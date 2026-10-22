@@ -1,6 +1,6 @@
 package com.example.iib_camel.converter.cli;
 
-import com.example.iib_camel.converter.diagram.AsciiDiagramRenderer;
+import com.example.iib_camel.converter.diagram.AnalysisMarkdownRenderer;
 import com.example.iib_camel.converter.diagram.AsciiDocDiagramRenderer;
 import com.example.iib_camel.converter.diagram.DiagramNames;
 import com.example.iib_camel.converter.diagram.MermaidDiagramRenderer;
@@ -29,40 +29,42 @@ import java.util.concurrent.Callable;
 import java.util.stream.Stream;
 
 /**
- * Команда построения диаграмм из потоков IIB
- * (docs/diagram-renderer-design.ru.md, разделы 4.4 и 5).
+ * Команда инвентаризации системы IIB **до миграции** (docs/diagram-renderer-design.ru.md).
  *
  * Контракт:
  *
- *   iib-camel-converter diagram [--input <файл|каталог>] [--output <каталог>]
- *                               [--orientation LR|TB] [--format mermaid|ascii|adoc|all] [--fail-fast]
+ *   iib-camel-converter analyze [--input &lt;файл|каталог&gt;] [--output &lt;каталог&gt;]
+ *                               [--orientation LR|TB] [--format mermaid|adoc|md|all] [--fail-fast]
  *
- * Вход — файл .msgflow/.subflow либо каталог (обход рекурсивно); по умолчанию ./input
- * относительно текущего каталога. Выход — по файлу диаграммы в каталоге --output
- * (по умолчанию ./output, создаётся при отсутствии): .mmd (Mermaid, канонический для GitHub),
- * .ascii (ASCII-конспект, D-8) либо .adoc (AsciiDoc-документ, D-8). По умолчанию
- * --format all — все три формата сразу, чтобы выбрать наиболее подходящий.
+ * Результат — «отчёт + визуализация текущей системы»: .mmd (Mermaid, канонический для
+ * GitHub), .adoc (AsciiDoc-документ) и .md (инвентаризационный отчёт со встроенной
+ * ```mermaid-схемой, таблицами узлов/связей и вердиктом о покрытии: предусмотрена ли
+ * обработка всех узлов IIB). ASCII-схема («дерево-конспект») удалена как дублирующая
+ * Mermaid. Полный отчёт о конвертации — команда convert (FR-5.1).
+ *
+ * Вход — файл .msgflow/.subflow либо каталог (обход рекурсивно); по умолчанию ./input.
+ * Выход — каталог --output (по умолчанию ./output, создаётся при отсутствии).
  * Диагностика — stderr, сводка — stdout.
  *
  * Коды возврата: 0 — всё отрисовано; 1 — неверные аргументы; 2 — частичный успех
  * (часть файлов не разобрана, остальные отрисованы); 3 — ни один файл не отрисован.
  */
-@Command(name = "diagram",
-         description = "Построение диаграмм из потоков IIB (.msgflow, .subflow).")
-public final class DiagramCommand implements Callable<Integer> {
+@Command(name = "analyze",
+         description = "Инвентаризация системы IIB до миграции: схема + отчёт «как есть».")
+public final class AnalyzeCommand implements Callable<Integer> {
 
     private final MsgFlowParser parser = new MsgFlowParser();
-    private final MermaidDiagramRenderer renderer =
+    private final MermaidDiagramRenderer mermaidRenderer =
             new MermaidDiagramRenderer(NodeCategoryRegistry.withIibDefaults());
-    private final AsciiDiagramRenderer asciiRenderer = new AsciiDiagramRenderer();
     private final AsciiDocDiagramRenderer adocRenderer = new AsciiDocDiagramRenderer();
+    private final AnalysisMarkdownRenderer analysisRenderer = new AnalysisMarkdownRenderer(mermaidRenderer);
 
     @Option(names = "--input", converter = PathConverter.class, defaultValue = "input",
             description = "Файл .msgflow/.subflow или каталог с ними (по умолчанию ./input).")
     Path input;
 
     @Option(names = "--output", converter = PathConverter.class, defaultValue = "output",
-            description = "Каталог для диаграмм (создаётся при отсутствии; по умолчанию ./output).")
+            description = "Каталог для схемы и отчёта (создаётся при отсутствии; по умолчанию ./output).")
     Path output;
 
     @Option(names = "--orientation", defaultValue = "LR",
@@ -70,8 +72,8 @@ public final class DiagramCommand implements Callable<Integer> {
     String orientation;
 
     @Option(names = "--format", defaultValue = "all",
-            description = "Формат вывода: mermaid (.mmd), ascii (.ascii), adoc (.adoc) "
-                    + "или all (по умолчанию all — сгенерировать все три).")
+            description = "Формат вывода: mermaid (.mmd), adoc (.adoc), md (отчёт со встроенной схемой) "
+                    + "или all (по умолчанию — все три).")
     String format;
 
     @Option(names = "--fail-fast", description = "Остановить пакетную обработку на первой ошибке разбора.")
@@ -100,12 +102,12 @@ public final class DiagramCommand implements Callable<Integer> {
         String fmt = format.toLowerCase(Locale.ROOT);
         switch (fmt) {
             case "mermaid", ".mmd" -> formats = List.of(".mmd");
-            case "ascii", ".ascii" -> formats = List.of(".ascii");
             case "adoc", ".adoc" -> formats = List.of(".adoc");
-            case "all" -> formats = List.of(".mmd", ".ascii", ".adoc");
+            case "md", ".md" -> formats = List.of(".md");
+            case "all" -> formats = List.of(".mmd", ".adoc", ".md");
             default -> {
                 System.err.println("Ошибка аргументов: неизвестный формат \"" + format
-                        + "\" (допустимо mermaid, ascii, adoc или all)");
+                        + "\" (допустимо mermaid, adoc, md или all)");
                 return 1;
             }
         }
@@ -131,7 +133,7 @@ public final class DiagramCommand implements Callable<Integer> {
 
         Map<String, Set<String>> usedByExt = new HashMap<>();
         int rendered = 0;
-        int diagrams = 0;
+        int artifacts = 0;
         int failures = 0;
         int nodes = 0;
         int edges = 0;
@@ -140,16 +142,17 @@ public final class DiagramCommand implements Callable<Integer> {
             try (InputStream in = Files.newInputStream(file)) {
                 MsgFlow flow = parser.parse(in);
                 String name = diagramName(flow.name(), stemOf(file));
+                String relative = base.relativize(file).toString();
                 for (String extension : formats) {
                     String fileName = uniqueName(name, extension,
                             usedByExt.computeIfAbsent(extension, k -> new HashSet<>()));
                     String content = switch (extension) {
-                        case ".ascii" -> asciiRenderer.render(flow);
-                        case ".adoc" -> adocRenderer.render(flow, base.relativize(file).toString());
-                        default -> renderer.render(flow, orient);
+                        case ".adoc" -> adocRenderer.render(flow, relative);
+                        case ".md" -> analysisRenderer.render(flow, orient, relative);
+                        default -> mermaidRenderer.render(flow, orient);
                     };
                     Files.writeString(output.resolve(fileName), content, StandardCharsets.UTF_8);
-                    diagrams++;
+                    artifacts++;
                 }
                 rendered++;
                 nodes += flow.nodes().size();
@@ -170,9 +173,9 @@ public final class DiagramCommand implements Callable<Integer> {
             }
         }
 
-        System.out.println("Диаграммы: потоков " + rendered
+        System.out.println("Инвентаризация: потоков " + rendered
                 + " из " + files.size()
-                + ", диаграмм " + diagrams + (fmt.equals("all") ? " (3 формата)" : "")
+                + ", артефактов " + artifacts + (fmt.equals("all") ? " (3 формата)" : "")
                 + ", узлов " + nodes
                 + ", связей " + edges
                 + ", ошибок " + failures);
@@ -190,7 +193,7 @@ public final class DiagramCommand implements Callable<Integer> {
         }
         try (Stream<Path> walk = Files.walk(input)) {
             return walk.filter(Files::isRegularFile)
-                    .filter(DiagramCommand::isFlowFile)
+                    .filter(AnalyzeCommand::isFlowFile)
                     .sorted(Comparator.comparing(Path::toString))
                     .toList();
         }
@@ -201,7 +204,7 @@ public final class DiagramCommand implements Callable<Integer> {
         return name.endsWith(".msgflow") || name.endsWith(".subflow");
     }
 
-    /** Имя файла диаграммы: политика DiagramNames (имя IR без расширения, fallback — stem файла). */
+    /** Имя файла схемы: политика DiagramNames (имя IR без расширения, fallback — stem файла). */
     static String diagramName(String flowName, String fileStem) {
         return DiagramNames.of(flowName, fileStem);
     }
@@ -216,7 +219,7 @@ public final class DiagramCommand implements Callable<Integer> {
         while (!used.add(base + "-" + index + extension)) {
             index++;
         }
-        System.err.println(base + ": имя диаграммы уже использовано, файл будет назван "
+        System.err.println(base + ": имя артефакта уже использовано, файл будет назван "
                 + base + "-" + index + extension);
         return base + "-" + index + extension;
     }

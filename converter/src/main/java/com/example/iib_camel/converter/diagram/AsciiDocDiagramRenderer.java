@@ -12,14 +12,16 @@ import java.util.Map;
  * Рендерер IR → AsciiDoc-документ (.adoc)
  * (docs/diagram-renderer-design.ru.md, раздел 4.4/4.5, формат adoc).
  *
- * Состав документа: заголовок (= имя потока), ASCII-конспект в листинг-блоке (читается
- * и как текст, и как диаграмма после конвертации asciidoctor), таблицы узлов и связей.
- * Детерминированный (D-3/D-4): узлы/связи в порядке объявления IR, без времени и случайностей.
- * Ascii-глифы дерева (├─ …) в документе допустимы — UTF-8 Asciidoctor отдаёт и для текста.
+ * Состав документа: заголовок (= имя потока), атрибут :source-file:, отсылка к графической
+ * схеме (.mmd рядом, сборщик рендерит через GitHub/asciidoctor-mechanism), таблицы узлов
+ * и связей. Детерминированный (D-3/D-4): узлы/связи в порядке объявления IR, без времени
+ * и случайностей.
+ *
+ * Историческая заметка: раньше документ содержал «дерево-конспект» (ASCII-схему) в
+ * листинг-блоке; ASCII-формат удалён — топология живёт в Mermaid (.mmd и встроенный
+ * блок в отчёте .md команды analyze).
  */
 public final class AsciiDocDiagramRenderer {
-
-    private final AsciiDiagramRenderer treeRenderer = new AsciiDiagramRenderer();
 
     /** Готовит документ .adoc по потоку (без атрибута источника). */
     public String render(MsgFlow flow) {
@@ -35,32 +37,30 @@ public final class AsciiDocDiagramRenderer {
         StringBuilder out = new StringBuilder();
         String title = DiagramNames.of(flow.name(), "flow");
 
-        out.append("// Сгенерировано конвертером iib-camel (diagram --format adoc, веха M1).\n")
+        out.append("// Сгенерировано конвертером iib-camel (analyze --format adoc).\n")
            .append("= ").append(title).append("\n");
         if (sourceFile != null && !sourceFile.isBlank()) {
             out.append(":source-file: ").append(sourceFile).append("\n");
         }
         out.append("\n")
-           .append("Файл потока сообщений IIB из корпуса конвертеров.\n\n");
+           .append("Поток сообщений IIB: структурная схема, узлы (id, тип, ключевое свойство)\n")
+           .append("и связи по терминалам.\n\n");
 
-        out.append("== Диаграмма\n\n")
-           .append("Дерево-конспект читается как текст и как диаграмма после конвертации\n")
-           .append("asciidoctor; детали связей — в таблице ниже.\n\n")
-           .append("----\n")
-           .append(treeRenderer.render(flow))
-           .append("----\n\n");
+        out.append("== Схема\n\n")
+           .append("Графическая схема потока — в файле ").append(title).append(".mmd рядом\n")
+           .append("(этот же блок встроен в MD-отчёт команды analyze).\n\n");
 
         out.append("== Узлы\n\n")
            .append("[cols=\"1,1,2,2\" options=\"header\"]\n")
            .append("|===\n")
-           .append("| id | тип | имя | свойства\n")
+           .append("| id | тип | имя | ключевое свойство\n")
            .append(rowsOfNodes(flow.nodes()))
            .append("|===\n\n");
 
         out.append("== Связи\n\n")
            .append("[cols=\"1,1,2,1\" options=\"header\"]\n")
            .append("|===\n")
-           .append("| source | терминал | target | терминал\n")
+           .append("| источник | терминал | приёмник | терминал\n")
            .append(rowsOfConnections(flow.connections()))
            .append("|===\n");
         return out.toString();
@@ -73,7 +73,7 @@ public final class AsciiDocDiagramRenderer {
                 .append(" | ").append(escapeCell(node.kind() == null ? "" : node.kind()))
                 .append(" | ").append(escapeCell(labelOf(node)));
             String caption = captionOf(node.properties());
-            rows.append(" | ").append(caption == null ? "—" : escapeCell(caption)).append("\n");
+            rows.append(" | ").append(escapeCell(caption == null ? "—" : caption)).append("\n");
         }
         return rows.toString();
     }
@@ -109,7 +109,7 @@ public final class AsciiDocDiagramRenderer {
 
     /**
      * Экранирование для текста ячейки таблицы AsciiDoc: вертикальная черта — разделитель
-     * ячеек, поэтому ее удобно заэскейпить конвертацией в сущность HTML.
+     * ячеек, поэтому её удобно заэскейпить конвертацией в сущность HTML.
      */
     private static String escapeCell(String text) {
         if (text == null) {
