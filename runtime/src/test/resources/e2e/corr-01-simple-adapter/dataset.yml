@@ -1,3 +1,8 @@
+queues:
+  - ADAPTER.IN
+  - ADAPTER.PRIORITY.Q
+  - ADAPTER.DEFAULT.Q
+  - ADAPTER.ERROR.Q
 cases:
   - name: high-status-order-routed-to-priority-queue
     input:

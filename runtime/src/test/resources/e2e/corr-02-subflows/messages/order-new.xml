@@ -1,0 +1,7 @@
+<!-- Входной заказ для маршрута Order (corr-02-subflows): проходит direct:Check
+     (Compute-бин CheckCompute1 сгенерирован конвертером из Check_Compute1.esql)
+     и уходит в ORDERS.OUT с JMS-свойством CommentField=CHECKED-BY-SUBFLOW. -->
+<Order>
+  <id>ORD-1001</id>
+  <status>NEW</status>
+</Order>

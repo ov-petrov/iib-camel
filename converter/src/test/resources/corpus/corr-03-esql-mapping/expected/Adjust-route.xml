@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<routes xmlns="http://camel.apache.org/schema/spring">
+  <!-- source: узел Input (MQInput) -->
+  <route id="Adjust">
+    <from uri="jms:ADJUST.IN"/>
+    <doTry>
+      <!-- source: узел Adjust (Compute) -->
+      <to uri="bean:adjustCompute1"/>
+      <!-- source: узел Adjusted (MQOutput) -->
+      <to uri="jms:ADJUST.OUT"/>
+      <doCatch>
+        <exception>java.lang.Exception</exception>
+        <!-- source: узел ErrorQueue (MQOutput) -->
+        <to uri="jms:ADJUST.ERROR.Q"/>
+      </doCatch>
+    </doTry>
+  </route>
+</routes>

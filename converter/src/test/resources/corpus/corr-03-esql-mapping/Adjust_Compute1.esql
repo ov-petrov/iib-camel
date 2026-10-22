@@ -1,0 +1,20 @@
+BROKER SCHEMA adjust
+
+CREATE COMPUTE MODULE Adjust_Compute1
+  CREATE FUNCTION Main() RETURNS BOOLEAN
+  BEGIN
+    -- копируем сообщение целиком (тело и MQMD)
+    SET OutputRoot = InputRoot;
+    -- метка корректировки: проверяется при приёмке (аналог corr-01:.ApplicationIdData)
+    SET OutputRoot.MQMD.CommentField = 'ADJUSTED';
+    -- переводимые строковые поля тела
+    SET OutputRoot.XMLNSC.Order.Status = 'ADJUSTED';
+    -- CAST-литерал: тип фиксируется примечанием, значение как строка
+    SET OutputRoot.XMLNSC.Order.Rating = CAST('100' AS DECIMAL);
+    -- ветвление вне конвертируемого подмножества: честный статус «частично» (FR-3.3)
+    IF InputBody.Order.Status = 'HOLD' THEN
+      SET OutputRoot.XMLNSC.Order.Status = 'PAUSED';
+    END IF;
+    RETURN TRUE;
+  END;
+END MODULE;

@@ -1,0 +1,24 @@
+queues:
+  - ORDERS.IN
+  - ORDERS.OUT
+  - ORDERS.ERROR.Q
+cases:
+  - name: order-passes-subflow-check-and-goes-to-out
+    input:
+      queue: ORDERS.IN
+      message: messages/order-new.xml
+    expect:
+      queue: ORDERS.OUT
+      mqmd:
+        commentField: CHECKED-BY-SUBFLOW
+  - name: priority-carried-through-subflow-check
+    input:
+      queue: ORDERS.IN
+      message: messages/order-new.xml
+      mqmd:
+        priority: 6
+    expect:
+      queue: ORDERS.OUT
+      mqmd:
+        priority: 6
+        commentField: CHECKED-BY-SUBFLOW
