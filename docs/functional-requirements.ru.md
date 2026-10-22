@@ -93,6 +93,28 @@
   | SetVariable / ResetContentDescriptor | установка свойств обмена (`exchangeProperty`, `setHeader`) |
   | Request-поддерево (пары Request/Reply) | `to` + `setExchangePattern` (`InOut`) |
   | подпоток (`.subflow`) | разворачивание во вложенный шаг маршрута (`direct`/`route`-вставка или выделенный `<route>` с вызовом через `to`) |
+
+  **Покрытие каталога узлов IIB (оценка, 2026-10).** Палитра built-in узлов IIB/ACE 12.x насчитывает
+  **~100+ типов узлов** (группируются в ~15 категорий-drawers). Конвертер поддерживает пока 4 вида
+  (`MQInput`, `MQOutput`, `Compute`, `Route` + семантика catch/fail терминалов) — формально ~4% каталога.
+  Разбивка по категориям и приоритеты расширения (FR-2.2 Should):
+
+  | Категория IBM | Примеры узлов | Статус | Кандидаты (Should) |
+  |---|---|---|---|
+  | Construction | Input, Output, Compute, Filter, Route, Throw, TryCatch, Validate | 2 из ~10 (Compute, Route) | Filter |
+  | MQ | MQInput, MQOutput, MQReply, MQGet, MQHeader, Publish | 2 из ~7 (MQInput, MQOutput) | MQReply (request/reply), MQGet |
+  | JMS | JMSInput/Output/Reply/Receive | 0 из 4 | JMSInput, JMSOutput (почти 1:1 к правилам MQ) |
+  | Transformation | ResetContentDescriptor, SetVariable | 0 | ResetContentDescriptor |
+  | Trace/Verify | Trace | 0 из 1 | Trace (→ `to(log)`, тривиально) |
+  | Timing | TimeoutNotification/Control, Timer | 0 | TimeoutNotification (→ `timer`) |
+  | Collating | Collector, Resequence, Sequence | 0 | по потребности |
+  | Database | DatabaseInput, DatabaseRetrieve, DatabaseRoute | 0 | вертикаль `sql`/`jdbc` целиком |
+  | Web services | HTTPInput/Reply/Request, SOAPInput/Request/Extract, REST* | 0 | отдельная вертикаль транспортов |
+  | File/Email | FileInput/Output/Read, EmailOutput | 0 | FileInput, FileOutput |
+  | Прочее (адаптеры) | CD*, Kafka, Salesforce, SAP, BigData, IoT и др. | 0 | вне рамок текущего этапа |
+
+  Узлы, не покрытые таблицей соответствия FR-2.2, не отбрасываются: согласно FR-2.7 конвертер
+  создаёт TODO-заглушку и помечает узел в отчёте (FR-5.1), так как потеря правил не допускается.
 - **FR-2.3. (Must)** Система должна сохранять структуру связей терминалов: ветвления, соединения к различным
   выводам, обработчики catch/fail — отображаются в соответствующие конструкции (`choice`, `doTry`,
   `onException`, `errorHandler`).

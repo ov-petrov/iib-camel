@@ -92,6 +92,28 @@ The system is used:
   | SetVariable / ResetContentDescriptor | exchange property/header setting (`exchangeProperty`, `setHeader`) |
   | Request subtree (Request/Reply pairs) | `to` + `setExchangePattern` (`InOut`) |
   | subflow (`.subflow`) | expansion into an embedded step of the route (`direct`/route inlining or a dedicated `<route>` called via `to`) |
+
+  **IIB node catalog coverage (assessment, 2026-10).** The IIB/ACE 12.x palette of built-in nodes
+  contains **~100+ node types** grouped into ~15 category drawers. The converter supports 4 kinds
+  so far (`MQInput`, `MQOutput`, `Compute`, `Route` + catch/fail terminal semantics) — formally ~4%
+  of the catalog. Breakdown by category and expansion priorities (FR-2.2 Should):
+
+  | IBM category | Example nodes | Status | Expansion candidates (Should) |
+  |---|---|---|---|
+  | Construction | Input, Output, Compute, Filter, Route, Throw, TryCatch, Validate | 2 of ~10 (Compute, Route) | Filter |
+  | MQ | MQInput, MQOutput, MQReply, MQGet, MQHeader, Publish | 2 of ~7 (MQInput, MQOutput) | MQReply (request/reply), MQGet |
+  | JMS | JMSInput/Output/Reply/Receive | 0 of 4 | JMSInput, JMSOutput (nearly 1:1 to the MQ rules) |
+  | Transformation | ResetContentDescriptor, SetVariable | 0 | ResetContentDescriptor |
+  | Trace/Verify | Trace | 0 of 1 | Trace (→ `to(log)`, trivial) |
+  | Timing | TimeoutNotification/Control, Timer | 0 | TimeoutNotification (→ `timer`) |
+  | Collating | Collector, Resequence, Sequence | 0 | as needed |
+  | Database | DatabaseInput, DatabaseRetrieve, DatabaseRoute | 0 | `sql`/`jdbc` vertical as a whole |
+  | Web services | HTTPInput/Reply/Request, SOAPInput/Request/Extract, REST* | 0 | a separate transport vertical |
+  | File/Email | FileInput/Output/Read, EmailOutput | 0 | FileInput, FileOutput |
+  | Other (adapters) | CD*, Kafka, Salesforce, SAP, BigData, IoT, etc. | 0 | out of scope for the current stage |
+
+  Nodes not covered by the FR-2.2 mapping table are not discarded: per FR-2.7 the converter emits
+  a TODO stub and marks the node in the report (FR-5.1), so no rule may be silently lost.
 - **FR-2.3. (Must)** The system shall preserve terminal wiring structure: branchings, connections to different
   outputs, catch/fail handlers — mapped to the corresponding constructs (`choice`, `doTry`,
   `onException`, `errorHandler`).
