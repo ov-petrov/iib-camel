@@ -6,8 +6,7 @@ import jakarta.jms.TextMessage;
 import org.apache.camel.CamelContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Timeout;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.junit.jupiter.api.Timeout;import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jms.core.JmsTemplate;
 import org.yaml.snakeyaml.Yaml;
@@ -23,22 +22,22 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * E2E-тест уровня L3 (docs/test-strategy.ru.md): сгенерированный маршрут
- * конвертера (camel/Adapter-route.xml) выполняется на встроенном Artemis,
- * сценарии берутся из декларативного датасета e2e (dataset.yml).
+ * E2E-тест уровня L3 (docs/test-strategy.ru.md): сгенерированные маршруты
+ * конвертера (camel/*.xml) выполняются на встроенном Artemis, сценарии —
+ * из декларативных датасетов e2e (параметризация по corpus-директориям).
  *
- * Каждая запись датасета: вход (очередь, сообщение, MQMD-приоритет) →
- * ожидание (очередь, приоритет, ApplicationIdData). Проверяем:
- * маршрутизацию по статусу, перенос тела (SET OutputRoot = InputRoot),
- * метку миграции IIB-CAMEL-MIG и переход в ERROR.Q при некорректном XML.
+ * Каждый датасет: список очередей + записи «вход (очередь, сообщение, MQMD-приоритет) →
+ * ожидание (очередь, приоритет, MQMD-свойство)». Проверяем: маршрутизацию (Route-узел,
+ * подпоток direct:), перенос тела (SET OutputRoot = InputRoot), QoS (preserveMessageQos),
+ * MQMD-метки сгенерированных Compute-бинов и переход в ERROR.Q при некорректном XML.
+ * corr-01 — 7-й узел Adapter_Compute1 (ручной бин), corr-02 — сгенерированный (FR-3.2).
  */
 @SpringBootTest
 @Timeout(120)
 class E2eDatasetTest {
 
-    private static final String E2E_DIR = "e2e/corr-01-simple-adapter";
-    private static final List<String> QUEUE_NAMES =
-            List.of("ADAPTER.IN", "ADAPTER.PRIORITY.Q", "ADAPTER.DEFAULT.Q", "ADAPTER.ERROR.Q");
+    private static final List<String> E2E_DIRS =
+            List.of("e2e/corr-01-simple-adapter", "e2e/corr-02-subflows");
 
     @Autowired
     private CamelContext camelContext;
@@ -52,38 +51,53 @@ class E2eDatasetTest {
     @BeforeEach
     void contextIsRunningAndQueuesAreEmpty() {
         assertNotNull(camelContext.getRoute("Adapter"), "маршрут Adapter должен быть загружен (FR-R2.1)");
-        for (String queue : QUEUE_NAMES) {
-            drain(queue);
+        assertNotNull(camelContext.getRoute("Order"), "маршрут Order должен быть загружен (FR-R2.1)");
+        assertNotNull(camelContext.getRoute("Check"), "вложенный маршрут подпотока Check (direct:, FR-2.2)");
+        for (String dir : E2E_DIRS) {
+            for (String queue : queuesOf(dir)) {
+                drain(queue);
+            }
+        }
+    }
+
+    /** Читает общий список очередей из датасета — каталог корректируется в yml, не в код. */
+    @SuppressWarnings("unchecked")
+    private List<String> queuesOf(String dir) {
+        try (InputStream in = Objects.requireNonNull(getClass().getResourceAsStream("/" + dir + "/dataset.yml"))) {
+            return (List<String>) ((Map<String, Object>) new Yaml().load(in)).get("queues");
+        } catch (Exception e) {
+            throw new IllegalStateException(dir + ": " + e.getMessage(), e);
         }
     }
 
     @Test
     @SuppressWarnings("unchecked")
-    void datasetCasesPass() throws Exception {
-        Map<String, Object> dataset;
-        try (InputStream in = Objects.requireNonNull(getClass().getResourceAsStream("/" + E2E_DIR + "/dataset.yml"))) {
-            dataset = (Map<String, Object>) new Yaml().load(in);
-        }
-        List<Map<String, Object>> cases = (List<Map<String, Object>>) dataset.get("cases");
-        assertTrue(cases.size() >= 3, "в датасете должны быть все сценарии corr-01");
-
+    void allDatasetCasesPass() throws Exception {
         int passed = 0;
-        for (Map<String, Object> aCase : cases) {
-            runCase(aCase);
-            passed++;
+        for (String dir : E2E_DIRS) {
+            Map<String, Object> dataset;
+            try (InputStream in = Objects.requireNonNull(getClass().getResourceAsStream("/" + dir + "/dataset.yml"))) {
+                dataset = (Map<String, Object>) new Yaml().load(in);
+            }
+            List<Map<String, Object>> cases = (List<Map<String, Object>>) dataset.get("cases");
+            for (Map<String, Object> aCase : cases) {
+                runCase(dir, aCase);
+                passed++;
+            }
         }
-        assertEquals(cases.size(), passed);
+        assertEquals(5, passed, "все сценарии обоих датасетов пройдены");
     }
 
     /** Исполняет один сценарий датасета: отправка → получение из ожидаемой очереди → проверки. */
-    private void runCase(Map<String, Object> aCase) throws Exception {
+    @SuppressWarnings("unchecked")
+    private void runCase(String dir, Map<String, Object> aCase) throws Exception {
         String name = (String) aCase.get("name");
         Map<String, Object> input = (Map<String, Object>) aCase.get("input");
         Map<String, Object> inputMqmd = (Map<String, Object>) input.get("mqmd");
         Map<String, Object> expect = (Map<String, Object>) aCase.get("expect");
         Map<String, Object> expectMqmd = (Map<String, Object>) expect.get("mqmd");
 
-        String body = readMessage((String) input.get("message"));
+        String body = readMessage(dir, (String) input.get("message"));
         String inputQueue = (String) input.get("queue");
         Integer inputPriority = inputMqmd == null ? null : (Integer) inputMqmd.get("priority");
 
@@ -121,6 +135,20 @@ class E2eDatasetTest {
                 assertEquals(appId, received.getStringProperty("ApplicationIdData"),
                         name + ": метка миграции (MQMD.ApplicationIdData) отсутствует");
             }
+            // общие MQMD-свойства (MQMD.CommentField и любые другие поля сгенерированных бинов)
+            Map<String, Object> properties = (Map<String, Object>) expectMqmd.get("properties");
+            if (properties != null) {
+                for (Map.Entry<String, Object> property : properties.entrySet()) {
+                    assertEquals(property.getValue(), received.getStringProperty(property.getKey()),
+                            name + ": MQMD-свойство " + property.getKey() + " (сгенерированный бин)");
+                }
+            }
+            // приложение может задавать и прямые имена полей (commentField → CommentField)
+            Object comment = expectMqmd.get("commentField");
+            if (comment != null) {
+                assertEquals(comment, received.getStringProperty("CommentField"),
+                        name + ": MQMD.CommentField отсутствует");
+            }
         }
     }
 
@@ -136,9 +164,9 @@ class E2eDatasetTest {
         }
     }
 
-    private String readMessage(String resource) throws Exception {
+    private String readMessage(String dir, String resource) throws Exception {
         try (InputStream in = Objects.requireNonNull(
-                getClass().getResourceAsStream("/" + E2E_DIR + "/" + resource))) {
+                getClass().getResourceAsStream("/" + dir + "/" + resource))) {
             return new String(in.readAllBytes(), StandardCharsets.UTF_8).strip();
         }
     }
