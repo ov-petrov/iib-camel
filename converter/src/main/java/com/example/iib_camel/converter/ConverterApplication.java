@@ -10,7 +10,8 @@ import picocli.CommandLine.Command;
  *
  * Запускается по команде, выполняет свою работу и завершается; фоновых процессов и веб-служб нет.
  * Подкоманды {@code diagram} (docs/diagram-renderer-design.ru.md) и {@code convert}
- * (FR-2.1…FR-2.7, FR-5.1) регистрируются в рантайме.
+ * (FR-2.1…FR-2.7, FR-5.1) регистрируются в рантайме. Вызов без подкоманды означает
+ * convert, а пропущенные флаги берут дефолты: --input ./input, --output ./output.
  */
 @Command(name = "iib-camel-converter",
          mixinStandardHelpOptions = true,
@@ -25,6 +26,7 @@ public final class ConverterApplication implements Runnable {
     }
 
     public static void main(String[] args) {
+        // вызов jar вовсе без подкоманды = основной конвейер convert (дефолты ./input → ./output)
         CommandLine commandLine = new CommandLine(new ConverterApplication());
         commandLine.addSubcommand("diagram", new DiagramCommand());
         commandLine.addSubcommand("convert", new ConvertCommand());
@@ -33,6 +35,6 @@ public final class ConverterApplication implements Runnable {
             System.err.println("Ошибка аргументов: " + ex.getMessage());
             return 1;
         });
-        System.exit(commandLine.execute(args));
+        System.exit(commandLine.execute(args.length == 0 ? new String[] {"convert"} : args));
     }
 }

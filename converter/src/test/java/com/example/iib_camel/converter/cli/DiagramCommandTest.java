@@ -6,6 +6,8 @@ import picocli.CommandLine;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Comparator;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -43,6 +45,12 @@ class DiagramCommandTest {
 
     private int run(String... args) {
         return new CommandLine(command).execute(args);
+    }
+
+    private static void deleteRecursively(Path root) throws Exception {
+        try (Stream<Path> walk = Files.walk(root)) {
+            walk.sorted(Comparator.reverseOrder()).forEach(p -> p.toFile().delete());
+        }
     }
 
     @Test
@@ -113,6 +121,37 @@ class DiagramCommandTest {
     @Test
     void missingInputReturnsExitCode1(@TempDir Path temp) {
         assertEquals(1, run("--input", temp.resolve("no-such-dir").toString()));
+    }
+
+    @Test
+    void defaultFormatRendersAllThreeFormats(@TempDir Path temp) throws Exception {
+        Path input = temp.resolve("in");
+        Files.createDirectories(input);
+        Files.writeString(input.resolve("Sample.msgflow"), SAMPLE_MSGFLOW);
+        Path output = temp.resolve("out");
+
+        assertEquals(0, run("--input", input.toString(), "--output", output.toString()));
+
+        assertTrue(Files.exists(output.resolve("Sample.mmd")));
+        assertTrue(Files.exists(output.resolve("Sample.ascii")));
+        assertTrue(Files.exists(output.resolve("Sample.adoc")));
+    }
+
+    @Test
+    void noArgumentsResolveToCwdInputAndOutput() throws Exception {
+        Path input = Path.of("input");
+        Path output = Path.of("output");
+        Files.createDirectories(input);
+        Files.writeString(input.resolve("Sample.msgflow"), SAMPLE_MSGFLOW);
+        try {
+            assertEquals(0, run());
+            assertTrue(Files.exists(output.resolve("Sample.mmd")), "дефолт --output: ./output");
+            assertTrue(Files.exists(output.resolve("Sample.ascii")));
+            assertTrue(Files.exists(output.resolve("Sample.adoc")));
+        } finally {
+            deleteRecursively(input);
+            deleteRecursively(output);
+        }
     }
 
     @Test

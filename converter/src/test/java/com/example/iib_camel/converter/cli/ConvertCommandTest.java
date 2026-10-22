@@ -63,6 +63,25 @@ class ConvertCommandTest {
         assertTrue(exit != 0, "отсутствующий ввод → ненулевой код возврата");
     }
 
+    @Test
+    void bareRunUsesDefaultInputAndOutputDirectories() throws Exception {
+        Path input = Path.of("input");
+        Path output = Path.of("output");
+        Files.createDirectories(input);
+        copyFixtureFiles(input);
+        try {
+            int exit = new CommandLine(new ConvertCommand()).execute();
+            assertEquals(0, exit, "запуск без аргументов: ./input → ./output");
+            assertTrue(Files.exists(output.resolve("Adapter-route.xml")),
+                    "дефолт --output: ./output");
+            assertTrue(Files.readString(output.resolve("migration-report.md"),
+                    StandardCharsets.UTF_8).contains("## Статусы единиц"));
+        } finally {
+            deleteRecursively(input);
+            deleteRecursively(output);
+        }
+    }
+
     private static int run(Path input, Path output) {
         return new CommandLine(new ConvertCommand())
                 .execute("--input", input.toString(), "--output", output.toString());
@@ -82,5 +101,24 @@ class ConvertCommandTest {
             }
         }
         return tempDir.resolve("corpus");
+    }
+
+    /** Копирует артефакты фикстуры (msgflow + esql) в готовый каталог ввода. */
+    private static void copyFixtureFiles(Path to) throws IOException {
+        Path src = Paths.get("src/test/resources/corpus/corr-01-simple-adapter");
+        try (Stream<Path> walk = Files.walk(src)) {
+            for (Path file : walk.filter(Files::isRegularFile).filter(f -> {
+                String name = f.getFileName().toString();
+                return name.endsWith(".msgflow") || name.endsWith(".esql");
+            }).toList()) {
+                Files.copy(file, to.resolve(file.getFileName().toString()));
+            }
+        }
+    }
+
+    private static void deleteRecursively(Path root) throws IOException {
+        try (Stream<Path> walk = Files.walk(root)) {
+            walk.sorted(Comparator.reverseOrder()).forEach(p -> p.toFile().delete());
+        }
     }
 }

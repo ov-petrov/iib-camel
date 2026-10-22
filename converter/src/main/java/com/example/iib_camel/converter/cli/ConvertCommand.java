@@ -28,7 +28,10 @@ import java.util.stream.Stream;
  * Команда конвертации потоков IIB в маршруты Apache Camel (FR-2.1–FR-2.7, FR-5.1–FR-5.3, FR-7.1).
  *
  * Контракт:
- *   iib-camel-converter convert --input &lt;файл|.msgflow-каталог&gt; [--output каталог]
+ *   iib-camel-converter convert [--input &lt;файл|.msgflow-каталог&gt;] [--output каталог]
+ *
+ * По умолчанию: --input ./input, --output ./output (создаётся при отсутствии) —
+ * оба пути относительно текущего каталога, из которого вызван jar (FR-7.1).
  *
  * Конвейер (FR-2.1, Must): парсер → генератор маршрутов → вывод + отчёт.
  * Выход: для каждого .msgflow — файл &lt;Имя&gt;-route.xml; единый migration-report.md.
@@ -42,12 +45,12 @@ import java.util.stream.Stream;
          description = "Конвертация .msgflow (+ESQL) в маршруты Apache Camel с отчётом о миграции.")
 public final class ConvertCommand implements Callable<Integer> {
 
-    @Option(names = {"--input", "-i"}, required = true,
-            description = "Файл .msgflow или каталог (обход рекурсивный).")
+    @Option(names = {"--input", "-i"}, defaultValue = "input",
+            description = "Файл .msgflow или каталог (обход рекурсивный); по умолчанию ./input.")
     private Path input;
 
-    @Option(names = {"--output", "-o"}, defaultValue = "converted",
-            description = "Каталог вывода (по умолчанию converted).")
+    @Option(names = {"--output", "-o"}, defaultValue = "output",
+            description = "Каталог вывода (создаётся при отсутствии; по умолчанию ./output).")
     private Path output;
 
     private final List<String> errors = new ArrayList<>();

@@ -19,9 +19,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.stream.Stream;
@@ -32,12 +34,14 @@ import java.util.stream.Stream;
  *
  * Контракт:
  *
- *   iib-camel-converter diagram --input <файл|каталог> [--output <каталог>]
- *                               [--orientation LR|TB] [--format mermaid|ascii|adoc] [--fail-fast]
+ *   iib-camel-converter diagram [--input <файл|каталог>] [--output <каталог>]
+ *                               [--orientation LR|TB] [--format mermaid|ascii|adoc|all] [--fail-fast]
  *
- * Вход — файл .msgflow/.subflow либо каталог (обход рекурсивно). Выход — по файлу диаграммы
- * в каталоге --output (по умолчанию ./diagrams): .mmd (Mermaid, канонический для GitHub),
- * .ascii (ASCII-конспект, D-8) либо .adoc (AsciiDoc-документ, D-8) — по --format.
+ * Вход — файл .msgflow/.subflow либо каталог (обход рекурсивно); по умолчанию ./input
+ * относительно текущего каталога. Выход — по файлу диаграммы в каталоге --output
+ * (по умолчанию ./output, создаётся при отсутствии): .mmd (Mermaid, канонический для GitHub),
+ * .ascii (ASCII-конспект, D-8) либо .adoc (AsciiDoc-документ, D-8). По умолчанию
+ * --format all — все три формата сразу, чтобы выбрать наиболее подходящий.
  * Диагностика — stderr, сводка — stdout.
  *
  * Коды возврата: 0 — всё отрисовано; 1 — неверные аргументы; 2 — частичный успех
@@ -53,20 +57,21 @@ public final class DiagramCommand implements Callable<Integer> {
     private final AsciiDiagramRenderer asciiRenderer = new AsciiDiagramRenderer();
     private final AsciiDocDiagramRenderer adocRenderer = new AsciiDocDiagramRenderer();
 
-    @Option(names = "--input", required = true, converter = PathConverter.class,
-            description = "Файл .msgflow/.subflow или каталог с ними.")
+    @Option(names = "--input", converter = PathConverter.class, defaultValue = "input",
+            description = "Файл .msgflow/.subflow или каталог с ними (по умолчанию ./input).")
     Path input;
 
-    @Option(names = "--output", converter = PathConverter.class, defaultValue = "diagrams",
-            description = "Каталог для диаграмм (создаётся при отсутствии).")
+    @Option(names = "--output", converter = PathConverter.class, defaultValue = "output",
+            description = "Каталог для диаграмм (создаётся при отсутствии; по умолчанию ./output).")
     Path output;
 
     @Option(names = "--orientation", defaultValue = "LR",
             description = "Ориентация Mermaid-диаграммы: LR (к голове вправо) или TB (сверху вниз).")
     String orientation;
 
-    @Option(names = "--format", defaultValue = "mermaid",
-            description = "Формат вывода: mermaid (.mmd), ascii (.ascii) или adoc (.adoc).")
+    @Option(names = "--format", defaultValue = "all",
+            description = "Формат вывода: mermaid (.mmd), ascii (.ascii), adoc (.adoc) "
+                    + "или all (по умолчанию all — сгенерировать все три).")
     String format;
 
     @Option(names = "--fail-fast", description = "Остановить пакетную обработку на первой ошибке разбора.")
@@ -91,12 +96,18 @@ public final class DiagramCommand implements Callable<Integer> {
             return 1;
         }
 
-        boolean ascii = format.equalsIgnoreCase("ascii");
-        boolean adoc = format.equalsIgnoreCase("adoc");
-        if (!ascii && !adoc && !format.equalsIgnoreCase("mermaid")) {
-            System.err.println("Ошибка аргументов: неизвестный формат \"" + format
-                    + "\" (допустимо mermaid, ascii или adoc)");
-            return 1;
+        List<String> formats;
+        String fmt = format.toLowerCase(Locale.ROOT);
+        switch (fmt) {
+            case "mermaid", ".mmd" -> formats = List.of(".mmd");
+            case "ascii", ".ascii" -> formats = List.of(".ascii");
+            case "adoc", ".adoc" -> formats = List.of(".adoc");
+            case "all" -> formats = List.of(".mmd", ".ascii", ".adoc");
+            default -> {
+                System.err.println("Ошибка аргументов: неизвестный формат \"" + format
+                        + "\" (допустимо mermaid, ascii, adoc или all)");
+                return 1;
+            }
         }
 
         if (!Files.exists(input)) {
@@ -118,8 +129,9 @@ public final class DiagramCommand implements Callable<Integer> {
         // База для сообщений: путь файла относительно корня входа (FR-1.3: файл+строка в диагностике)
         Path base = Files.isDirectory(input) ? input : input.getParent() == null ? Path.of(".") : input.getParent();
 
-        Set<String> usedNames = new HashSet<>();
+        Map<String, Set<String>> usedByExt = new HashMap<>();
         int rendered = 0;
+        int diagrams = 0;
         int failures = 0;
         int nodes = 0;
         int edges = 0;
@@ -128,12 +140,17 @@ public final class DiagramCommand implements Callable<Integer> {
             try (InputStream in = Files.newInputStream(file)) {
                 MsgFlow flow = parser.parse(in);
                 String name = diagramName(flow.name(), stemOf(file));
-                String extension = ascii ? ".ascii" : adoc ? ".adoc" : ".mmd";
-                String fileName = uniqueName(name, extension, usedNames);
-                String content = ascii ? asciiRenderer.render(flow)
-                        : adoc ? adocRenderer.render(flow, base.relativize(file).toString())
-                        : renderer.render(flow, orient);
-                Files.writeString(output.resolve(fileName), content, StandardCharsets.UTF_8);
+                for (String extension : formats) {
+                    String fileName = uniqueName(name, extension,
+                            usedByExt.computeIfAbsent(extension, k -> new HashSet<>()));
+                    String content = switch (extension) {
+                        case ".ascii" -> asciiRenderer.render(flow);
+                        case ".adoc" -> adocRenderer.render(flow, base.relativize(file).toString());
+                        default -> renderer.render(flow, orient);
+                    };
+                    Files.writeString(output.resolve(fileName), content, StandardCharsets.UTF_8);
+                    diagrams++;
+                }
                 rendered++;
                 nodes += flow.nodes().size();
                 edges += flow.connections().size();
@@ -153,8 +170,9 @@ public final class DiagramCommand implements Callable<Integer> {
             }
         }
 
-        System.out.println("Диаграммы: отрисовано файлов " + rendered
+        System.out.println("Диаграммы: потоков " + rendered
                 + " из " + files.size()
+                + ", диаграмм " + diagrams + (fmt.equals("all") ? " (3 формата)" : "")
                 + ", узлов " + nodes
                 + ", связей " + edges
                 + ", ошибок " + failures);
