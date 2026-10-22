@@ -39,7 +39,8 @@ public final class EsqlParser {
         return modules.getFirst();
     }
 
-    List<EsqlModule> parseAll(String source) {
+    /** Все модули исходника (для отчёта FR-5.1: единицы «модуль ESQL»). */
+    public List<EsqlModule> parseAll(String source) {
         String schema = match(BROKER_SCHEMA, source).orElse("");
         List<EsqlModule> modules = new ArrayList<>();
         Matcher moduleMatcher = MODULE.matcher(source);

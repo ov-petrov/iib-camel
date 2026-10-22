@@ -39,8 +39,22 @@ class ConvertCommandTest {
         assertEquals(golden, Files.readString(output.resolve("Adapter-route.xml"),
                 StandardCharsets.UTF_8), "маршрут побайтово равен golden-файлу");
         String report = Files.readString(output.resolve("migration-report.md"), StandardCharsets.UTF_8);
+        // структура полного отчёта FR-5.1–5.3
         assertTrue(report.contains("Adapter.msgflow"));
+        assertTrue(report.contains("## Статусы единиц"));
+        assertTrue(report.contains("## Потоки"));
+        assertTrue(report.contains("## Узлы по типам"));
+        assertTrue(report.contains("## Детализация узлов"));
+        assertTrue(report.contains("## ESQL"));
         assertTrue(report.contains("## Сводка"));
+        // единицы: 6 узлов + 1 модуль ESQL; полнота автоматизации 6/7 = 85.7% (FR-5.3)
+        assertTrue(report.contains("| **Всего** | 7 | 100.0 |"));
+        assertTrue(report.contains("85.7"));
+        // статусы честные: узлы конвертированы, ESQL требует ручной доработки (FR-3.2)
+        assertTrue(report.contains("| Input | MQInput | конвертировано | вход: jms:ADAPTER.IN |"));
+        assertTrue(report.contains("Adapter_Compute1.esql"));
+        assertTrue(report.contains("перевод ESQL → Java не автоматизирован"));
+        assertTrue(report.contains("OutputRoot.MQMD.ApplicationIdData"));
     }
 
     @Test

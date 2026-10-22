@@ -13,7 +13,3 @@ public record EsqlModule(String schema, String name, String type, List<EsqlFunct
         return functions.stream().filter(f -> f.name().equals(name)).findFirst();
     }
 }
-
-record EsqlFunction(String name, String returnType, List<EsqlAssignment> assignments, boolean returnsTrue) {}
-
-record EsqlAssignment(String target, String value) {}
