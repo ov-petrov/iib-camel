@@ -55,9 +55,13 @@ mvn -DskipTests package
 После этого артефакты готовы к использованию:
 
 ```text
-converter/target/iib-camel-converter-0.0.1-SNAPSHOT.jar   ← CLI-конвертер
+converter/target/converter.jar                            ← CLI-конвертер (fat-jar, самодостаточный)
 runtime/target/iib-camel-runtime-0.0.1-SNAPSHOT.jar       ← runtime-сервис (boot-jar)
 ```
+
+> `converter.jar` — самодостаточный (зависимости внутри): его можно копировать
+> в любой каталог и запускать как `java -jar converter.jar` — сопровождающий
+> каталог `lib/` не нужен.
 
 ---
 
@@ -94,7 +98,7 @@ cp -r converter/src/test/resources/corpus/corr-01-simple-adapter input
 Перед конвертацией убедитесь, что конвертер видит ожидаемую топологию:
 
 ```bash
-java -jar converter/target/iib-camel-converter-0.0.1-SNAPSHOT.jar \
+java -jar converter/target/converter.jar \
   diagram --input input --output diagrams --format mermaid
 ```
 
@@ -111,7 +115,7 @@ java -jar converter/target/iib-camel-converter-0.0.1-SNAPSHOT.jar \
 Основная команда конвертации (FR-2.1: парсер → генератор → вывод + отчёт):
 
 ```bash
-java -jar converter/target/iib-camel-converter-0.0.1-SNAPSHOT.jar \
+java -jar converter/target/converter.jar \
   convert --input input --output converted
 ```
 

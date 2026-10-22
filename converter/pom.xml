@@ -38,36 +38,33 @@
     </dependencies>
 
     <build>
+        <finalName>converter</finalName>
         <plugins>
+            <!-- Самодостаточный (fat-)jar: зависимости включаются внутрь, имя всегда converter.jar.
+                 Инструкция: java -jar converter.jar работает из любого каталога,
+                 без сопровождающего каталога lib/ (FR-7.1: one-shot CLI для заказчика). -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-jar-plugin</artifactId>
-                <version>3.4.2</version>
+                <artifactId>maven-assembly-plugin</artifactId>
+                <version>3.7.1</version>
                 <configuration>
+                    <descriptorRefs>
+                        <descriptorRef>jar-with-dependencies</descriptorRef>
+                    </descriptorRefs>
                     <archive>
                         <manifest>
                             <mainClass>com.example.iib_camel.converter.ConverterApplication</mainClass>
-                            <addClasspath>true</addClasspath>
-                            <classpathPrefix>lib/</classpathPrefix>
                         </manifest>
                     </archive>
+                    <appendAssemblyId>false</appendAssemblyId>
                 </configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-dependency-plugin</artifactId>
-                <version>3.7.1</version>
                 <executions>
                     <execution>
-                        <id>copy-dependencies</id>
+                        <id>fat-jar</id>
                         <phase>package</phase>
                         <goals>
-                            <goal>copy-dependencies</goal>
+                            <goal>single</goal>
                         </goals>
-                        <configuration>
-                            <includeScope>runtime</includeScope>
-                            <outputDirectory>${project.build.directory}/lib</outputDirectory>
-                        </configuration>
                     </execution>
                 </executions>
             </plugin>
