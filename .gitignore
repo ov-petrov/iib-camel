@@ -50,3 +50,6 @@ testing-1/
 .env.*
 !.env.example
 *.log
+
+# Confidential source material and local reviews.
+/.private/

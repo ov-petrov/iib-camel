@@ -1,0 +1,72 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: ${IIB_POSTGRES_DB:-iib_runtime}
+      POSTGRES_USER: ${IIB_POSTGRES_USER:-runtime_dev}
+      POSTGRES_PASSWORD: ${IIB_POSTGRES_PASSWORD:-runtime_dev_only}
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  artemis:
+    image: apache/artemis:2.53.0-alpine
+    profiles: ["artemis"]
+    environment:
+      ARTEMIS_USER: ${ARTEMIS_USER:-runtime_dev}
+      ARTEMIS_PASSWORD: ${ARTEMIS_PASSWORD:-runtime_dev_only}
+    ports:
+      - "127.0.0.1:61636:61616"
+    volumes:
+      - artemis-data:/var/lib/artemis-instance
+
+  kafka:
+    image: apache/kafka:4.1.1
+    profiles: ["kafka"]
+    environment:
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:19092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:19092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      CLUSTER_ID: ${KAFKA_CLUSTER_ID:-MkU3OEVBNTcwNTJENDM2Qk}
+    ports:
+      - "127.0.0.1:19092:19092"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+
+  ibm-mq:
+    image: icr.io/ibm-messaging/mq:9.4.5.1-r1
+    platform: linux/amd64
+    profiles: ["ibm-mq"]
+    environment:
+      LICENSE: ${IBM_MQ_LICENSE_ACCEPT:-not-accepted}
+      MQ_QMGR_NAME: ${IBM_MQ_QMGR_NAME:-DEVQM}
+      MQ_APP_PASSWORD: ${IBM_MQ_APP_PASSWORD:-runtime_dev_only}
+      MQ_ADMIN_PASSWORD: ${IBM_MQ_ADMIN_PASSWORD:-runtime_dev_only}
+      MQ_DEV: "true"
+    ports:
+      - "127.0.0.1:1414:1414"
+      - "127.0.0.1:9443:9443"
+    volumes:
+      - ibm-mq-data:/mnt/mqm
+
+volumes:
+  postgres-data:
+  artemis-data:
+  kafka-data:
+  ibm-mq-data:

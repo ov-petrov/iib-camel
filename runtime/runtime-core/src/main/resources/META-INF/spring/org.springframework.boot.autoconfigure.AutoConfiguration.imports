@@ -1,0 +1,2 @@
+ru.petrovov.iib_camel.runtime.transport.config.RuntimeTransportAutoConfiguration
+ru.petrovov.iib_camel.runtime.xml.RuntimeXmlAutoConfiguration

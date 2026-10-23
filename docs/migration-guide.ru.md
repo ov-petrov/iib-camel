@@ -1,5 +1,7 @@
 # Пошаговая инструкция по миграции IIB → Spring Boot + Apache Camel
 
+> **Архивное руководство по compatibility-тестовой среде.** Шаги деплоя и запуска ниже относятся к `compatibility-tests/legacy-runtime` на Java 25; это не инструкция для самостоятельного runtime. Новый runtime использует Java 21, Spring Boot 4.1.2, Apache Camel 4.22.2 LTS и Jackson 3 XML. Его сборка, настройки PostgreSQL inbox/outbox, offline-профиль и подключение модулей описаны в [руководстве runtime](../runtime/README.ru.md), Compose-стенд — в [runtime/deploy](../runtime/deploy/compose.yaml).
+
 > Руководство для заказчика: как с нуля превратить артефакты IBM Integration Bus
 > (потоки сообщений `.msgflow`, вычисления `.esql`) в маршруты Apache Camel
 > и запустить их в runtime-сервисе на Spring Boot.
@@ -20,13 +22,13 @@
 
 | Компонент | Версия | Примечание |
 |---|---|---|
-| Java (JDK) | 21/25 | используются и converter, и runtime |
+| Java (JDK) | 25 | converter и legacy runtime для compatibility-тестов |
 | Apache Maven | 3.9+ | сборка `mvnw`-обёртка не поставляется — используйте локальный Maven |
 | Git | — | клонирование репозитория |
 | Брокер JMS | встроенный Artemis (из коробки) или внешний | встроенный broker стартует вместе с runtime |
 
 > Установка JDK 25 (Linux/macOS, Homebrew): `brew install openjdk@25`.
-> Убедитесь, что `java -version` и `mvn -version` показывают JDK 21+.
+> Убедитесь, что `java -version` и `mvn -version` показывают JDK 25.
 
 Проверка окружения:
 
@@ -42,21 +44,16 @@ mvn -version
 ```bash
 git clone <URL_репозитория> iib-camel
 cd iib-camel
-mvn clean test
+mvn -B -f pom.xml -pl converter,compatibility-tests/legacy-runtime -am verify
 ```
 
-Ожидаемый результат: `BUILD SUCCESS`; всего **57 тестов** (converter 55 + runtime 2).
-Если тесты зелённые и сборка прошла — окружение корректно.
-
-```bash
-mvn -DskipTests package
-```
+Число тестов зависит от текущей версии; ориентируйтесь на результат Maven для этой ревизии.
 
 После этого артефакты готовы к использованию:
 
 ```text
 converter/target/converter.jar                            ← CLI-конвертер (fat-jar, самодостаточный)
-runtime/target/iib-camel-runtime-0.0.1-SNAPSHOT.jar       ← runtime-сервис (boot-jar)
+compatibility-tests/legacy-runtime/target/iib-camel-legacy-runtime-tests-0.0.1-SNAPSHOT.jar ← legacy boot-jar для compatibility-проверок
 ```
 
 > `converter.jar` — самодостаточный (зависимости внутри): его можно копировать
@@ -272,16 +269,16 @@ converted/
 
 ---
 
-## Шаг 6. Деплой маршрута в runtime
+## Шаг 6. Деплой маршрута в legacy compatibility runtime
 
 Скопируйте XML-маршрут в каталог `camel/` ресурсов runtime-сервиса:
 
 ```bash
-mkdir -p runtime/src/main/resources/camel
-cp converted/Adapter-route.xml runtime/src/main/resources/camel/
+mkdir -p compatibility-tests/legacy-runtime/src/main/resources/camel
+cp converted/Adapter-route.xml compatibility-tests/legacy-runtime/src/main/resources/camel/
 ```
 
-Паттерн загрузки задан в `runtime/src/main/resources/application.properties`:
+Паттерн загрузки legacy runtime задан в `compatibility-tests/legacy-runtime/src/main/resources/application.properties`:
 
 ```properties
 camel.main.routes-include-pattern = classpath:camel/*.xml
@@ -299,8 +296,8 @@ camel.main.routes-include-pattern = classpath:camel/*.xml
 сгенерированные `AdapterCompute1` и `CheckCompute1`; ручной POJO-парсер не требуется.
 
 ```bash
-mkdir -p runtime/src/main/java/ru/petrovov/iib_camel/runtime/generated
-cp converted/beans/*.java runtime/src/main/java/ru/petrovov/iib_camel/runtime/generated/
+mkdir -p compatibility-tests/legacy-runtime/src/main/java/ru/petrovov/iib_camel/runtime/generated
+cp converted/beans/*.java compatibility-tests/legacy-runtime/src/main/java/ru/petrovov/iib_camel/runtime/generated/
 ```
 
 Бины наследуют `AbstractComputeBean`. Единственная точка вызова — `compute(Exchange)`.
@@ -338,12 +335,12 @@ Failure Route относится только к вычислению услов
 
 ---
 
-## Шаг 7. Запуск runtime-сервиса
+## Шаг 7. Запуск legacy runtime для compatibility-проверки
 
 Boot-jar стартует автономно: встроенный Artemis поднимается вместе с сервисом:
 
 ```bash
-java -jar runtime/target/iib-camel-runtime-0.0.1-SNAPSHOT.jar
+java -jar compatibility-tests/legacy-runtime/target/iib-camel-legacy-runtime-tests-0.0.1-SNAPSHOT.jar
 ```
 
 Ожидаемый лог:
@@ -357,7 +354,7 @@ Started IibCamelApplication in … seconds
 
 Ctrl+C останавливает сервис.
 
-> Для отладки из Maven эквивалент: `mvn -pl runtime spring-boot:run`.
+> Для проверки из Maven: `mvn -pl converter,compatibility-tests/legacy-runtime -am test`. Новый runtime запускается по отдельной инструкции из `runtime/README.ru.md`.
 
 **Подключение к внешнему брокеру (FR-R3.x):**
 
@@ -367,7 +364,7 @@ java -Dspring.artemis.mode=NATIVE \
      -Dspring.artemis.port=61616 \
      -Dspring.artemis.user=<***> \
      -Dspring.artemis.password=<***> \
-     -jar runtime/target/iib-camel-runtime-0.0.1-SNAPSHOT.jar
+     -jar compatibility-tests/legacy-runtime/target/iib-camel-legacy-runtime-tests-0.0.1-SNAPSHOT.jar
 ```
 
 Пара важных настроек JMS-компонента встроена в код/конфигурацию:
@@ -382,11 +379,11 @@ java -Dspring.artemis.mode=NATIVE \
 ## Шаг 8. Сквозная проверка миграции (e2e, уровень L3)
 
 Тестовые сценарии для потока хранятся в декларативном датасете `dataset.yml`
-(структура в `runtime/src/test/resources/e2e/corr-01-simple-adapter/`).
+(структура в `compatibility-tests/legacy-runtime/src/test/resources/e2e/corr-01-simple-adapter/`).
 Проверка корректности маршрута на реальном исполнении (встроенный Artemis):
 
 ```bash
-mvn -pl runtime -am test -Dtest=E2eDatasetTest,GeneratedArtifactsTest,GeneratedRouteSemanticsTest -Dsurefire.failIfNoSpecifiedTests=false
+mvn -pl converter,compatibility-tests/legacy-runtime -am test -Dtest=E2eDatasetTest,GeneratedArtifactsTest,GeneratedRouteSemanticsTest -Dsurefire.failIfNoSpecifiedTests=false
 ```
 
 Проверяются сохранённые и свежесгенерированные маршруты; базовый датасет содержит три кейса:
@@ -420,7 +417,7 @@ mvn -pl runtime -am test -Dtest=E2eDatasetTest,GeneratedArtifactsTest,GeneratedR
 3. [ ] `convert` → `converted/<Имя>-route.xml` + отчёт (Шаг 4).
 4. [ ] В отчёте «не поддерживается: 0» либо за mark вручную сформулирован план
        доработки unsupported-узлов (FR-2.7) (Шаг 5).
-5. [ ] Маршрут скопирован в `runtime/src/main/resources/camel/` (Шаг 6).
+5. [ ] Маршрут скопирован в `compatibility-tests/legacy-runtime/src/main/resources/camel/` (Шаг 6).
 6. [ ] Для каждого Compute/бboss-узла реализован `@Component`-бин с camelcase-имя
        модуля (Шаг 6.1) и POJO-модель (Шаг 6.2).
 7. [ ] Датасет e2e заполнен сценариями (happy path + работоспособность приоритетов

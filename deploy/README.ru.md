@@ -1,5 +1,7 @@
 # Локальный пилот: Artemis
 
+> Это руководство описывает прежний converter pilot и legacy runtime, сохранённый в `compatibility-tests/legacy-runtime` для compatibility-тестов. Оно не задаёт конфигурацию нового приложения Java 21. Для актуальной сборки и эксплуатации см. [руководство самостоятельного runtime](../runtime/README.ru.md) и его [Compose-конфигурацию](../runtime/deploy/compose.yaml).
+
 Решение пользователя от 2026-10-22: основной брокер пилота — **Apache Artemis**. IBM MQ остаётся опциональным адаптером и не блокирует пилот. JMS-свойства в Artemis не доказывают перенос IBM MQMD; совместимость с существующими IBM MQ системами проверяется отдельно.
 
 ## Запуск
@@ -15,10 +17,10 @@ set -a
 source deploy/artemis/.env
 set +a
 export JAVA_HOME=$(/usr/libexec/java_home -v 25)
-mvn verify
-ARTEMIS_INTEGRATION=true mvn -pl runtime -am test \
+mvn -B -f pom.xml -pl converter,compatibility-tests/legacy-runtime -am verify
+ARTEMIS_INTEGRATION=true mvn -pl converter,compatibility-tests/legacy-runtime -am test \
   -Dtest=ArtemisDeliveryIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false
-java -jar runtime/target/iib-camel-runtime-0.0.1-SNAPSHOT.jar --spring.profiles.active=artemis
+java -jar compatibility-tests/legacy-runtime/target/iib-camel-legacy-runtime-tests-0.0.1-SNAPSHOT.jar --spring.profiles.active=artemis
 ```
 
 `JAVA_HOME` выше — пример для macOS; на других ОС требуется установленный JDK 25. `ARTEMIS_BROKER_URL`, `ARTEMIS_USER`, `ARTEMIS_PASSWORD`, `ARTEMIS_MAX_CONNECTIONS`, `ARTEMIS_MAX_SESSIONS`, `ARTEMIS_POOL_WAIT_TIMEOUT` задаются окружением. Стенд слушает только `127.0.0.1:61626`, использует официальный `apache/artemis:2.53.0-alpine`, поддерживающий amd64 и arm64. Брокерные пользователи создаются при первом запуске volume; изменение пароля окружения не обновляет уже созданную учётную запись.
@@ -57,9 +59,9 @@ docker compose --env-file deploy/ibm-mq/.env -f deploy/ibm-mq/compose.yaml up -d
 set -a
 source deploy/ibm-mq/.env
 set +a
-IBM_MQ_INTEGRATION=true mvn -pl runtime -am test \
+IBM_MQ_INTEGRATION=true mvn -pl converter,compatibility-tests/legacy-runtime -am test \
   -Dtest=IbmMqDeliveryIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false
-java -jar runtime/target/iib-camel-runtime-0.0.1-SNAPSHOT.jar --spring.profiles.active=ibm-mq
+java -jar compatibility-tests/legacy-runtime/target/iib-camel-legacy-runtime-tests-0.0.1-SNAPSHOT.jar --spring.profiles.active=ibm-mq
 ```
 
 Параметры `IBM_MQ_HOST`, `IBM_MQ_PORT`, `IBM_MQ_QUEUE_MANAGER`, `IBM_MQ_CHANNEL`, `IBM_MQ_USER`, `IBM_MQ_PASSWORD`, `IBM_MQ_SSL_CIPHER_SUITE`, `IBM_MQ_SSL_PEER_NAME`, `IBM_MQ_MAX_CONNECTIONS`, `IBM_MQ_MAX_SESSIONS`, `IBM_MQ_POOL_WAIT_TIMEOUT` задаются окружением. Trust/key stores TLS задаются JVM JSSE, например `javax.net.ssl.trustStore`; пароли хранилищ не размещаются в Git. Для этого локального стенда DLQ `IIB.DLQ`, тестовые очереди `DEV.IIB.*`, queue manager `QM1`, channel `DEV.APP.SVRCONN`, порт `21414`. MQSC задаёт `BOTHRESH(0)`: poison routing IBM client не должен опередить приложение. Для существующих очередей это условие согласуется с MQ-администратором.

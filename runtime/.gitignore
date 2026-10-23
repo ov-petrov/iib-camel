@@ -1,0 +1,6 @@
+/target/
+**/target/
+/deploy/.env
+/.private/
+**/.private/
+.DS_Store

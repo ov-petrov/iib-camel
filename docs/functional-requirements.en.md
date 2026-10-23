@@ -4,6 +4,8 @@
 
 A migration tool for IBM Integration Bus (IIB/ACE) applications to Spring Boot + Apache Camel.
 
+Update dated 2026-10-23: section 7 defines the independent runtime for manual migration. Generated-route execution requirements below remain applicable to the converter's legacy compatibility environment, rather than the new runtime architecture.
+
 Every requirement is labeled with a **MoSCoW** priority (see section 5): **Must** — mandatory for the
 first version, **Should** — important, deferrable, **Could** — desirable, done if resources allow,
 **Won't** — deliberately out of scope for this version.
@@ -20,7 +22,7 @@ first version, **Should** — important, deferrable, **Could** — desirable, do
 | **ULM** | Unified Logical Message of IIB: Properties, MQMD, Body, Environment, LocalEnvironment, DestinationList |
 | **Intermediary Model (IR)** | Internal representation of artifacts after parsing; all generators are built on top of it |
 | **Converter** | Separate one-shot Java application (module `converter`) that converts IIB artifacts into target artifacts |
-| **Runtime service** | Spring Boot application (module `runtime`) that executes the generated Apache Camel routes |
+| **Runtime service** | Independent Spring Boot application in `runtime` for manually implemented modules; the previous generated-route executor remains in `compatibility-tests/legacy-runtime` |
 
 ## 2. Product composition and context of use
 
@@ -39,6 +41,16 @@ The system is used:
 - as a one-shot converter for initial porting, and a scaffold generator for iterative porting.
 
 **The system is not** an IIB runtime and does not replace manual business-logic analysis.
+
+### 2.1. Target profile clarification — 2026-10-23
+
+This delivery scope governs priorities for the current stage. The broader catalog below also describes future capabilities; implementing every IIB adapter is not a current goal.
+
+- **FR-P1.1. (Must)** MQ and Kafka are the main transports for the target scenarios. REST and SOAP are added when required by concrete examples. MQ/JMS on Artemis has been verified; Kafka remains planned implementation work.
+- **FR-P1.2. (Must)** Preserve access to the existing database and reference-data lookups used by ESQL transformations. Spring JDBC is the default approach; JPA/Hibernate is used when an entity model and its lifecycle justify it. A large XML mapping alone does not require JPA. This does not require support for every IIB Database node.
+- **FR-P1.3. (Must)** Each migration scenario defines its functional contract, including conditions and ordering of sends, message properties/encodings and error paths. MQRFH2, Encoding/CCSID, additional terminals, promoted properties and database access require explicit migration rules or unsupported diagnostics. Exact header mapping to the target protocol and transaction boundaries need separate verification; changing brokers does not define them.
+
+Each capability requires separate synthetic scenarios and behavior checks. Confidential inputs and case-specific reviews are stored separately from public documentation.
 
 ## 3. Functional requirements: converter
 
@@ -112,7 +124,8 @@ The system is used:
   | Database | DatabaseInput, DatabaseRetrieve, DatabaseRoute | 0 | `sql`/`jdbc` vertical as a whole |
   | Web services | HTTPInput/Reply/Request, SOAPInput/Request/Extract, REST* | 0 | a separate transport vertical |
   | File/Email | FileInput/Output/Read, EmailOutput | 0 | FileInput, FileOutput |
-  | Other (adapters) | CD*, Kafka, Salesforce, SAP, BigData, IoT, etc. | 0 | out of scope for the current stage |
+  | Kafka | Kafka nodes and configuration | 0 | target capability of the current profile; not yet implemented |
+  | Other (adapters) | CD*, Salesforce, SAP, BigData, IoT, etc. | 0 | out of scope for the current stage |
 
   Nodes not covered by the FR-2.2 mapping table are not discarded: per FR-2.7 the converter emits
   a TODO stub and marks the node in the report (FR-5.1), so no rule may be silently lost.
@@ -335,3 +348,14 @@ Planned iterations:
 - XA transactions and hard delivery guarantees (ported manually);
 - Processing of nodes requiring ACE runtime (e.g., parts of non-standard Database node properties);
 - Editing source flows/business logic via the system.
+
+## 7. Independent runtime for manual migration
+
+- **FR-MR1 (Must)** Runtime builds and runs on Java 21 without the converter, its artifacts, or a shared Maven parent. One repository and a root aggregator are allowed. Use stable Spring Boot, Camel XML DSL, BOM-managed dependencies, and Jackson XML.
+- **FR-MR2 (Must)** IBM MQ, Artemis, and Kafka are independently enabled and can coexist. External configuration supplies addresses, authentication, pooling, and TLS/SASL settings. Each provider and wire contract requires separate integration verification.
+- **FR-MR3 (Must)** Each integration module has its own Maven directory with Java handlers, XML routes, configuration, tests, and documentation. Adding a module requires an application rebuild; automatic ESQL migration and hot loading are not required.
+- **FR-MR4 (Must)** PostgreSQL and Spring JDBC support reference lookups, business writes, and inbox/outbox. Add JPA only when justified and with a compatible transaction design. Persist input identity, business changes, and immutable READY outputs in one database transaction before ACK or offset commit.
+- **FR-MR5 (Must)** The publisher claims ready rows across multiple instances, awaits broker confirmation, and records PROCESSED. Support retries, crash recovery, bounded attempts, and stable event IDs. Delivery is at least once with deduplication; XA and exactly-once are not claimed. PROCESSED means broker acceptance.
+- **FR-MR6 (Must)** The local stand, example module, and guides use synthetic data only. Confidential sources and business-module documentation are not published. Health/readiness and graceful shutdown belong in the scaffold; operational policies are defined per module.
+
+Current implementation and limits: [runtime](../runtime/README.ru.md), [delivery contract](../runtime/docs/delivery.ru.md), [implementation progress](implementation-progress.ru.md).

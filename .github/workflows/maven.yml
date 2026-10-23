@@ -8,7 +8,39 @@ permissions:
   contents: read
 
 jobs:
-  verify:
+  runtime:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: runtime_test
+          POSTGRES_PASSWORD: runtime_test
+          POSTGRES_DB: runtime_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U runtime_test -d runtime_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      IIB_TEST_POSTGRES_URL: jdbc:postgresql://localhost:5432/runtime_test
+      IIB_TEST_POSTGRES_USER: runtime_test
+      IIB_TEST_POSTGRES_PASSWORD: runtime_test
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Verify runtime with PostgreSQL
+        run: mvn -B -f runtime/pom.xml verify
+
+  converter-compatibility:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -19,5 +51,5 @@ jobs:
           distribution: temurin
           java-version: '25'
           cache: maven
-      - name: Verify
-        run: mvn -B verify
+      - name: Verify converter and compatibility tests
+        run: mvn -B -f pom.xml -pl converter,compatibility-tests/legacy-runtime -am verify

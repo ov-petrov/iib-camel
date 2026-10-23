@@ -1,0 +1,6 @@
+<routes xmlns="http://camel.apache.org/schema/spring">
+  <route id="example.receive" errorHandlerRef="runtimePropagateErrors">
+    <from uri="{{iib.modules.example.input-uri:direct:example-input}}"/>
+    <process ref="exampleReceive"/>
+  </route>
+</routes>
