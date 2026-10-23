@@ -42,7 +42,7 @@ class RouteGeneratorTest {
     @Test
     void generatesRouteSkeleton() {
         String xml = new RouteGenerator(adapterFlow()).generate().xml();
-        assertTrue(xml.contains("<from uri=\"jms:ADAPTER.IN\"/>"));
+        assertTrue(xml.contains("<from uri=\"jms:ADAPTER.IN?transacted=true&amp;disableReplyTo=true\"/>"));
         assertTrue(xml.contains("<to uri=\"bean:adapterCompute1\"/>"));
         assertTrue(xml.contains("<xpath>/Adapter/Order/status=&apos;HIGH&apos;</xpath>"));
         assertTrue(xml.contains("<to uri=\"jms:ADAPTER.PRIORITY.Q\"/>"));
@@ -136,8 +136,8 @@ class RouteGeneratorTest {
         assertTrue(result.xml().contains("<from uri=\"direct:Check\"/>"));
         assertTrue(result.xml().contains("<to uri=\"bean:checkCompute1\"/>"),
                 "содержимое подпотока развёрнуто во вложенный маршрут");
-        assertTrue(result.xml().contains("Unsupported IIB node: Trace"),
-                "Trace внутри подпотока — честная заглушка FR-2.7");
+        assertTrue(result.xml().contains("Unsupported IIB Trace"),
+                "неподдерживаемый Trace останавливает маршрут");
         assertTrue(result.xml().contains("<to uri=\"jms:ORDERS.OUT\"/>"));
         assertEquals(UnitStatus.CONVERTED, result.statusOf("Acked"));
     }
@@ -154,8 +154,8 @@ class RouteGeneratorTest {
                         .filter(d -> d.nodeId().equals("CheckRef"))
                         .allMatch(d -> d.note().contains("не найден во входном наборе")),
                 "примечание называет причину: reference-файл отсутствует");
-        assertTrue(result.xml().contains("Unsupported IIB node: Subflow"),
-                "заглушка вместо разворачивания");
+        assertTrue(result.xml().contains("Unsupported IIB Subflow"),
+                "неразрешённая ссылка останавливает маршрут");
     }
 
     @Test

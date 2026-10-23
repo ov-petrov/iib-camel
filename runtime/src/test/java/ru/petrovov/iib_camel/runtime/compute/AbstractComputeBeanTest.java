@@ -16,6 +16,8 @@ import org.xml.sax.SAXParseException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -40,6 +42,55 @@ class AbstractComputeBeanTest {
         Exchange exchange = new DefaultExchange(new DefaultCamelContext());
         exchange.getIn().setBody(body);
         return exchange;
+    }
+
+    @Test
+    void messageModeStartsWithEmptyOutputAndImmutableInput() {
+        Exchange exchange = exchangeWith("<Order><Value>INPUT</Value></Order>");
+        exchange.getIn().setHeader("Input", "header");
+        new TestBean((bean, message) -> {
+            assertNull(message.getIn().getBody());
+            assertTrue(message.getIn().getHeaders().isEmpty());
+            bean.setBodyField(message, "Result.Value", "OUTPUT");
+            assertEquals("INPUT", bean.bodyField(message, true, "Order.Value"));
+            assertEquals("OUTPUT", bean.bodyField(message, false, "Result.Value"));
+            assertEquals("header", bean.mqmdField(message, true, "Input"));
+            assertNull(bean.mqmdField(message, false, "Input"));
+        }).compute(exchange);
+        assertEquals("<Result><Value>OUTPUT</Value></Result>", exchange.getIn().getBody());
+        assertTrue(exchange.getIn().getHeaders().isEmpty());
+    }
+
+    @Test
+    void nullDeletesFieldsAndNeverCreatesMissingAncestors() {
+        Exchange exchange = exchangeWith("<Order><Value>old</Value><Keep>keep</Keep></Order>");
+        new TestBean((bean, message) -> {
+            bean.copy(message);
+            bean.setBodyField(message, "Order.Value", null);
+            bean.setBodyField(message, "Order.Absent.Nested", null);
+            bean.mqmd(message, "Gone", "old");
+            bean.mqmd(message, "Gone", null);
+        }).compute(exchange);
+        assertEquals("<Order><Keep>keep</Keep></Order>", exchange.getIn().getBody());
+        assertNull(exchange.getIn().getHeader("Gone"));
+    }
+
+    @Test
+    void scalarOperationsPreserveNullAndValidateNumericValues() {
+        assertNull(EsqlValues.cast(null, "INTEGER"));
+        assertNull(EsqlValues.compare(null, "x", "="));
+        assertNull(EsqlValues.not(null));
+        assertFalse(EsqlValues.truth(null));
+        assertNull(EsqlValues.and(true, null));
+        assertNull(EsqlValues.or(false, null));
+        assertEquals(false, EsqlValues.and(false, null));
+        assertEquals(true, EsqlValues.or(true, null));
+        assertEquals(12L, EsqlValues.cast("0012", "INTEGER"));
+        assertEquals(true, EsqlValues.compare(12L, new java.math.BigDecimal("12.00"), "="));
+        assertThrows(IllegalArgumentException.class, () -> EsqlValues.cast("12x", "INTEGER"));
+        assertThrows(IllegalArgumentException.class, () -> EsqlValues.cast("9223372036854775808", "INTEGER"));
+        assertThrows(IllegalArgumentException.class, () -> EsqlValues.cast("NaN", "DECIMAL"));
+        assertThrows(IllegalArgumentException.class, () -> EsqlValues.cast("yes", "BOOLEAN"));
     }
 
     @Test

@@ -1,0 +1,30 @@
+name: iib-camel-mq-pilot
+services:
+  mq:
+    image: icr.io/ibm-messaging/mq:9.4.5.1-r1
+    platform: ${IBM_MQ_PLATFORM:-linux/amd64}
+    environment:
+      LICENSE: ${IBM_MQ_LICENSE:?Set IBM_MQ_LICENSE=accept after reviewing the IBM MQ developer license}
+      MQ_QMGR_NAME: QM1
+      MQ_CONNAUTH_USE_HTP: "true"
+    ports:
+      - "127.0.0.1:${IBM_MQ_PORT:-21414}:1414"
+    secrets:
+      - mqAppPassword
+      - mqAdminPassword
+    volumes:
+      - mq-data:/mnt/mqm
+      - ./20-iib-pilot.mqsc:/etc/mqm/20-iib-pilot.mqsc:ro
+    healthcheck:
+      test: ["CMD", "chkmqready"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 30s
+volumes:
+  mq-data:
+secrets:
+  mqAppPassword:
+    environment: IBM_MQ_APP_PASSWORD
+  mqAdminPassword:
+    environment: IBM_MQ_ADMIN_PASSWORD

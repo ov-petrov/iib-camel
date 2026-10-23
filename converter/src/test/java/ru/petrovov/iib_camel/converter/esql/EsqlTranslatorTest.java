@@ -56,7 +56,7 @@ class EsqlTranslatorTest {
         assertTrue(t.complete(), "строковое поле тела и CAST-литерал входят в подмножество");
         assertEquals("setBodyField(exchange, \"Order.Status\", \"ACTIVE\");",
                 t.statements().get(0).java());
-        assertEquals("setBodyField(exchange, \"Order.Amount\", \"250\");",
+        assertEquals("setBodyField(exchange, \"Order.Amount\", esqlCast(\"250\", \"DECIMAL\"));",
                 t.statements().get(1).java());
         assertTrue(t.statements().get(1).note().contains("CAST"));
         assertTrue(t.statements().get(1).note().contains("DECIMAL"));
@@ -164,6 +164,43 @@ class EsqlTranslatorTest {
                 + "BEGIN RETURN TRUE; END; END MODULE;");
         assertFalse(new EsqlTranslator(function).translate().complete());
         assertTrue(function.unsupportedFragments().stream().anyMatch(f -> f.contains("DATABASE")));
+    }
+
+    @Test
+    void validatesCastTypesAndLiteralLexicalForms() {
+        for (String expression : java.util.List.of("CAST('12x' AS INTEGER)", "CAST('9223372036854775808' AS INTEGER)",
+                "CAST('abc' AS DECIMAL)", "CAST('yes' AS BOOLEAN)", "CAST('12' AS DATE)",
+                "CAST(1.5 AS INTEGER)", "CAST(CAST('12x' AS CHARACTER) AS INTEGER)", "CAST(TRUE AS DECIMAL)", "CAST(1 AS BOOLEAN)")) {
+            var result = translate("SET OutputRoot.MQMD.Value = " + expression + "; RETURN TRUE;");
+            assertFalse(result.complete(), expression);
+            assertEquals(UnitStatus.NOT_SUPPORTED, result.statements().getFirst().status(), expression);
+        }
+        for (String expression : java.util.List.of("CAST('12' AS INTEGER)", "CAST('12.50' AS DECIMAL)",
+                "CAST('TRUE' AS BOOLEAN)", "CAST(NULL AS INTEGER)", "TRUE", "NULL", "12", "12.50")) {
+            assertTrue(translate("SET OutputRoot.MQMD.Value = " + expression + "; RETURN TRUE;").complete(), expression);
+        }
+    }
+
+    @Test
+    void preservesConditionalStructureAndRejectsUnknownBranchBeforeExecution() {
+        var result = translate("""
+                SET OutputRoot = InputRoot;
+                IF CAST(InputRoot.XMLNSC.Order.Amount AS DECIMAL) >= 10.5 AND NOT FALSE THEN
+                  SET OutputRoot.XMLNSC.Order.Status = 'HIGH';
+                ELSEIF InputRoot.XMLNSC.Order.Amount IS NULL THEN
+                  SET OutputRoot.XMLNSC.Order.Status = 'MISSING';
+                ELSE
+                  IF TRUE THEN SET OutputRoot.XMLNSC.Order.Status = 'LOW'; END IF;
+                END IF;
+                RETURN TRUE;
+                """);
+        assertTrue(result.complete(), result.issues().toString());
+        assertEquals(2, result.statements().size());
+        assertTrue(result.statements().getLast().java().contains("} else {"));
+        var bad = translate("IF TRUE THEN SET OutputRoot.MQMD.Value = 'ok'; ELSE MYSTERY; END IF; RETURN TRUE;");
+        assertFalse(bad.complete());
+        assertFalse(translate("IF InputRoot.XMLNSC.Order.Amount > 10 THEN SET OutputRoot = InputRoot; END IF; RETURN TRUE;").complete(),
+                "mixed-type comparison requires explicit CAST");
     }
 
     private static EsqlTranslator.FunctionTranslation translate(String body) {

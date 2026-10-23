@@ -1,0 +1,22 @@
+name: iib-camel-artemis-pilot
+services:
+  artemis:
+    image: apache/artemis:2.53.0-alpine
+    environment:
+      ARTEMIS_USER: ${ARTEMIS_USER:-pilot}
+      ARTEMIS_PASSWORD: ${ARTEMIS_PASSWORD:?Set ARTEMIS_PASSWORD outside Git}
+      ANONYMOUS_LOGIN: "false"
+      EXTRA_ARGS: "--role pilot --no-autotune --nio"
+    ports:
+      - "127.0.0.1:${ARTEMIS_PORT:-61626}:61616"
+    volumes:
+      - artemis-data:/var/lib/artemis-instance
+      - ./etc-override:/var/lib/artemis-instance/etc-override:ro
+    healthcheck:
+      test: ["CMD-SHELL", "./bin/artemis check node --url tcp://localhost:61616 --user \"$$ARTEMIS_USER\" --password \"$$ARTEMIS_PASSWORD\""]
+      interval: 10s
+      timeout: 15s
+      retries: 12
+      start_period: 20s
+volumes:
+  artemis-data:

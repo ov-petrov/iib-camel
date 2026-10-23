@@ -4,7 +4,6 @@ import ru.petrovov.iib_camel.converter.report.UnitStatus;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -15,8 +14,6 @@ public final class EsqlTranslator {
             Pattern.compile("(?i)OUTPUTROOT\\.MQMD\\.(\\w+)");
     private static final Pattern BODY_TARGET =
             Pattern.compile("(?i)OUTPUTROOT\\.(XMLNSC|XML|XMLNS)\\.([A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*)");
-    private static final Pattern CAST =
-            Pattern.compile("(?i)CAST\\s*\\(\\s*(.+?)\\s+AS\\s+(\\w+)\\s*\\)");
 
     public record StatementTranslation(String esql, String java, UnitStatus status, String note) {
     }
@@ -40,12 +37,11 @@ public final class EsqlTranslator {
     public FunctionTranslation translate() {
         List<StatementTranslation> statements = new ArrayList<>();
         List<String> issues = new ArrayList<>();
-        for (EsqlAssignment assignment : function.assignments()) {
-            StatementTranslation t = translateAssignment(assignment);
+        for (EsqlStatement statement : function.statements()) {
+            StatementTranslation t = translateStatement(statement);
             statements.add(t);
             if (t.status() == UnitStatus.NOT_SUPPORTED) {
-                issues.add("SET " + assignment.target() + " = " + assignment.value()
-                        + " — " + t.note());
+                issues.add(t.esql() + " — " + t.note());
             }
         }
         issues.addAll(function.unsupportedFragments());
@@ -70,73 +66,78 @@ public final class EsqlTranslator {
                     "тело переносится без изменений (pass-through)");
         }
 
-        Optional<String> literal = stringLiteral(value);
-        if (literal.isEmpty()) {
-            Matcher cast = CAST.matcher(value);
-            if (cast.matches() && stringLiteral(cast.group(1)).isPresent()) {
-                return setByTarget(target, stringLiteral(cast.group(1)).get(), assignment,
-                        "CAST → строка" + (cast.group(2).isBlank() ? "" : " (тип " + cast.group(2) + ")"));
-            }
-            return unsupported(target, value, assignment,
-                    "выражение вне переводимого подмножества (не строковая константа, не CAST)");
+        EsqlExpression.Value expression;
+        try {
+            expression = EsqlExpression.compile(value);
+        } catch (IllegalArgumentException e) {
+            return unsupported(target, value, assignment, e.getMessage());
         }
-        return setByTarget(target, literal.get(), assignment, null);
-    }
-
-    private StatementTranslation setByTarget(String target, String value, EsqlAssignment assignment,
-                                              String castNote) {
         Matcher mqmd = MQMD_TARGET.matcher(target);
         if (mqmd.matches()) {
-            String note = "OutputRoot.MQMD." + mqmd.group(1);
-            return new StatementTranslation(
-                    original(assignment),
-                    "mqmd(exchange, \"" + mqmd.group(1) + "\", \"" + escape(value) + "\");",
-                    UnitStatus.CONVERTED,
-                    castNote == null ? note + " → JMS-свойство"
-                                     : note + " → JMS-свойство (" + castNote + ")");
+            return new StatementTranslation(original(assignment),
+                    "mqmd(exchange, \"" + mqmd.group(1) + "\", " + expression.java() + ");",
+                    UnitStatus.CONVERTED, "OutputRoot.MQMD." + mqmd.group(1) + " → JMS-свойство");
         }
         Matcher body = BODY_TARGET.matcher(target);
         if (body.matches()) {
-            String path = body.group(2);
-            String note = "OutputRoot." + body.group(1) + "." + path;
-            return new StatementTranslation(
-                    original(assignment),
-                    "setBodyField(exchange, \"" + path + "\", \"" + escape(value) + "\");",
-                    UnitStatus.CONVERTED,
-                    castNote == null ? note + " → поле тела XML"
-                                     : note + " → поле тела XML (" + castNote + ")");
+            return new StatementTranslation(original(assignment),
+                    "setBodyField(exchange, \"" + body.group(2) + "\", " + expression.java() + ");",
+                    UnitStatus.CONVERTED, "OutputRoot." + body.group(1) + "." + body.group(2)
+                            + " → поле XML" + (value.strip().toUpperCase(java.util.Locale.ROOT).startsWith("CAST") ? " (" + value + ")" : ""));
         }
         if (target.regionMatches(true, 0, "OutputRoot.JSON", 0, "OutputRoot.JSON".length())) {
             return unsupported(target, value, assignment, "домен JSON не поддерживается XML-runtime");
         }
-        return unsupported(target, value, assignment,
-                "цель вне переводимого подмножества (ожидается OutputRoot, OutputRoot.MQMD.* "
-                + "или OutputRoot.<XMLNSC|XML|XMLNS>.<простой путь без namespaces/индексов>)");
+        return unsupported(target, value, assignment, "цель вне переводимого подмножества");
+    }
+
+    private StatementTranslation translateStatement(EsqlStatement statement) {
+        if (statement instanceof EsqlStatement.Assignment assignment) return translateAssignment(assignment.assignment());
+        var conditional = (EsqlStatement.Conditional) statement;
+        try {
+            String condition = EsqlExpression.condition(conditional.condition()).java();
+            var java = new StringBuilder("if (esqlTrue(" + condition + ")) {\n");
+            appendBranch(java, conditional.whenTrue());
+            if (!conditional.whenFalse().isEmpty()) {
+                java.append("} else {\n");
+                appendBranch(java, conditional.whenFalse());
+            }
+            java.append("}");
+            return new StatementTranslation(conditional.source(), java.toString(), UnitStatus.CONVERTED, "IF/ELSE");
+        } catch (IllegalArgumentException e) {
+            return new StatementTranslation(conditional.source(), "// TODO (FR-3.3): IF требует ручной миграции",
+                    UnitStatus.NOT_SUPPORTED, e.getMessage());
+        }
+    }
+
+    private void appendBranch(StringBuilder java, List<EsqlStatement> branch) {
+        for (EsqlStatement statement : branch) {
+            StatementTranslation translated = translateStatement(statement);
+            if (translated.status() != UnitStatus.CONVERTED) throw new IllegalArgumentException(translated.note());
+            for (String line : translated.java().split("\\R")) java.append("    ").append(line).append('\n');
+        }
+    }
+
+    public List<StatementTranslation> modelStatements() {
+        List<StatementTranslation> result = new ArrayList<>();
+        flatten(function.statements(), result);
+        return List.copyOf(result);
+    }
+
+    private void flatten(List<EsqlStatement> statements, List<StatementTranslation> result) {
+        for (EsqlStatement statement : statements) {
+            if (statement instanceof EsqlStatement.Assignment assignment) result.add(translateAssignment(assignment.assignment()));
+            else {
+                var conditional = (EsqlStatement.Conditional) statement;
+                flatten(conditional.whenTrue(), result);
+                flatten(conditional.whenFalse(), result);
+            }
+        }
     }
 
     private static boolean isCopyWholeMessage(String target, String value) {
         return value.equalsIgnoreCase("InputRoot")
                 && target.equalsIgnoreCase("OutputRoot");
-    }
-
-    private static Optional<String> stringLiteral(String value) {
-        String expression = value.strip();
-        if (expression.length() < 2 || expression.charAt(0) != '\'') {
-            return Optional.empty();
-        }
-        var literal = new StringBuilder();
-        for (int i = 1; i < expression.length(); i++) {
-            char c = expression.charAt(i);
-            if (c != '\'') {
-                literal.append(c);
-            } else if (i + 1 < expression.length() && expression.charAt(i + 1) == '\'') {
-                literal.append('\'');
-                i++;
-            } else {
-                return i == expression.length() - 1 ? Optional.of(literal.toString()) : Optional.empty();
-            }
-        }
-        return Optional.empty();
     }
 
     private static StatementTranslation unsupported(String target, String value,
@@ -152,9 +153,4 @@ public final class EsqlTranslator {
         return "SET " + assignment.target() + " = " + assignment.value() + ";";
     }
 
-    private static String escape(String s) {
-        return s.replace("\\", "\\\\").replace("\"", "\\\"")
-                .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
-                .replace("\b", "\\b").replace("\f", "\\f");
-    }
 }

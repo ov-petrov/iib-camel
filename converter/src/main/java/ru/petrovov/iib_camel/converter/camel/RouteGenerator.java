@@ -17,7 +17,7 @@ import java.util.Set;
 public final class RouteGenerator {
     private static final String CAMEL_NS = "http://camel.apache.org/schema/spring";
     public static final Set<String> SUPPORTED_BASE_KINDS =
-            Set.of("MQInput", "MQOutput", "Compute", "Route", "Subflow", "Input", "Output");
+            Set.of("MQInput", "MQOutput", "Compute", "Route", "Subflow", "Input", "Output", "Mapping");
 
     private final MsgFlow flow;
     private final SubflowResolver resolver;
@@ -50,7 +50,8 @@ public final class RouteGenerator {
             String id = routeId(flow.name()) + (inputs.size() > 1 ? "-" + input.id() : "");
             out.append(line(1, commentFor(input)))
                .append(line(1, "<route id=\"" + xml(id) + "\">"))
-               .append(line(2, "<from uri=\"jms:" + xml(queue(input)) + "\"/>"));
+               .append(line(2, "<from uri=\"" + xml("jms:" + queue(input)
+                       + "?transacted=true&disableReplyTo=true") + "\"/>"));
             if (!rawValidationErrors(raw)) {
                 boolean catches = connected(flow, input, "catch");
                 if (catches) out.append(snapshot(2, "capture")).append(line(2, "<doTry>"));
@@ -137,6 +138,10 @@ public final class RouteGenerator {
         switch (node.kind()) {
             case "Compute" -> {
                 diagnoseCompute(node, raw);
+                if (!node.properties().getOrDefault("computeMode", "message").equalsIgnoreCase("message")) {
+                    out.append(unsupported(indent, node, "Compute Mode не поддерживается"));
+                    return;
+                }
                 if (connected(source, node, "failure")) {
                     String success = property(source, node, "success");
                     out.append(line(indent, "<removeProperty name=\"" + success + "\"/>"))
@@ -155,6 +160,18 @@ public final class RouteGenerator {
                     out.append(step(indent, node, "<to uri=\"bean:" + xml(beanId(node)) + "\"/>"));
                     walk(node, "out", indent, out, raw, visited, referenced, source);
                 }
+            }
+            case "Mapping" -> {
+                String bean = node.properties().getOrDefault("mappingBean", "");
+                if (bean.isBlank()) {
+                    String reason = node.properties().getOrDefault("mappingIssue", "Mapping-ссылка не разрешена");
+                    raw.add(new Diagnosis(node.id(), node.kind(), UnitStatus.NOT_SUPPORTED, reason));
+                    out.append(unsupported(indent, node, reason));
+                } else {
+                    raw.add(new Diagnosis(node.id(), node.kind(), UnitStatus.CONVERTED, "MapStruct bean:" + bean));
+                    out.append(step(indent, node, "<to uri=\"bean:" + xml(bean) + "\"/>"));
+                }
+                walk(node, "out", indent, out, raw, visited, referenced, source);
             }
             case "Route" -> emitRouting(node, indent, out, raw, visited, referenced, source);
             case "MQOutput" -> {
@@ -522,6 +539,11 @@ public final class RouteGenerator {
     }
 
     private void diagnoseCompute(FlowNode node, List<Diagnosis> raw) {
+        String mode = node.properties().getOrDefault("computeMode", "message");
+        if (!mode.equalsIgnoreCase("message")) {
+            raw.add(new Diagnosis(node.id(), node.kind(), UnitStatus.NOT_SUPPORTED,
+                    "Compute Mode не поддерживается XML-профилем: " + mode));
+        }
         boolean missing = node.properties().getOrDefault("computeExpression", "").isBlank();
         raw.add(new Diagnosis(node.id(), node.kind(), missing ? UnitStatus.PARTIAL : UnitStatus.CONVERTED,
                 missing ? "computeExpression не задан — бин bean:" + beanId(node) + " резервируется по id узла и может не существовать"
@@ -624,8 +646,7 @@ public final class RouteGenerator {
     }
 
     private static String unknownNode(int indent, FlowNode node) {
-        return line(indent, "<!-- TODO (FR-2.7): правило конвертации узла \"" + commentText(node.kind()) + "\" не определено -->")
-                + line(indent, "<log message=\"Unsupported IIB node: " + xml(node.kind()) + "\"/>");
+        return unsupported(indent, node, "правило конвертации не определено");
     }
 
     private static String queue(FlowNode mq) {

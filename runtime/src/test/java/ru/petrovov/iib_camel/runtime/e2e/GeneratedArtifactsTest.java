@@ -95,7 +95,7 @@ class GeneratedArtifactsTest {
                 END MODULE;
                 """);
         assertEquals(0, new CommandLine(new ConvertCommand()).execute(
-                "--input", input.toString(), "--output", output.toString()));
+                "--input", input.toString(), "--output", output.toString(), "--no-strict"));
         var compiler = ToolProvider.getSystemJavaCompiler();
         assertNotNull(compiler, "Generated-source checks require a JDK");
         List<Path> sources;
@@ -134,7 +134,8 @@ class GeneratedArtifactsTest {
         }
         try (Stream<Path> files = Files.list(output)) {
             for (Path route : files.filter(p -> p.toString().endsWith("-route.xml")).toList()) {
-                String xml = Files.readString(route).replace("jms:", "jms:" + PREFIX);
+                String xml = Files.readString(route)
+                        .replace("jms:", "jms:" + PREFIX);
                 PluginHelper.getRoutesLoader(camel).loadRoutes(ResourceHelper.fromString(route.getFileName().toString(), xml));
             }
         }
@@ -166,6 +167,9 @@ class GeneratedArtifactsTest {
         assertNotNull(message, sample.toString());
         assertInstanceOf(TextMessage.class, message);
         assertEquals(body, ((TextMessage) message).getText());
+        for (String property : (List<String>) sample.expect().getOrDefault("absentProperties", List.of())) {
+            assertFalse(message.propertyExists(property), "Input snapshot must remove " + property);
+        }
         Map<String, Object> expectedQos = (Map<String, Object>) sample.expect().get("mqmd");
         if (expectedQos != null) {
             if (expectedQos.get("priority") != null) assertEquals(expectedQos.get("priority"), message.getJMSPriority());

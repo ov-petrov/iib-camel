@@ -121,8 +121,8 @@ class ProjectArtifactsTest {
 
         assertEquals(0, convert(input, output));
         String model = Files.readString(output.resolve("models/Order.java"));
-        assertTrue(model.contains("private String Status;"));
-        assertTrue(model.contains("private String Rating;"));
+        assertTrue(model.contains("private String status;"));
+        assertTrue(model.contains("private String rating;"));
     }
 
     @Test

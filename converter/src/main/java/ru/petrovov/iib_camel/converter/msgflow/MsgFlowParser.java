@@ -206,7 +206,8 @@ public final class MsgFlowParser {
         }
         if (namespace.endsWith(".msgnode")) {
             String body = namespace.substring(0, namespace.length() - ".msgnode".length());
-            return body.startsWith("ComIbm") ? body.substring("ComIbm".length()) : body;
+            String kind = body.startsWith("ComIbm") ? body.substring("ComIbm".length()) : body;
+            return kind.equals("MSLMapping") ? "Mapping" : kind;
         }
         return namespace.isEmpty() ? local : namespace;
     }
@@ -274,7 +275,8 @@ public final class MsgFlowParser {
         }
         if (prefix.endsWith(".msgnode")) {
             String body = prefix.substring(0, prefix.length() - ".msgnode".length());
-            return body.startsWith("ComIbm") ? body.substring("ComIbm".length()) : body;
+            String kind = body.startsWith("ComIbm") ? body.substring("ComIbm".length()) : body;
+            return kind.equals("MSLMapping") ? "Mapping" : kind;
         }
         return prefix;
     }

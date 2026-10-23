@@ -8,6 +8,7 @@ import ru.petrovov.iib_camel.converter.esql.EsqlToJavaGenerator;
 import ru.petrovov.iib_camel.converter.esql.EsqlTranslator;
 import ru.petrovov.iib_camel.converter.msgflow.MsgFlow;
 import ru.petrovov.iib_camel.converter.msgflow.MsgFlowParser;
+import ru.petrovov.iib_camel.converter.project.MappingProject;
 import ru.petrovov.iib_camel.converter.report.Diagnosis;
 import ru.petrovov.iib_camel.converter.report.RouteResult;
 import ru.petrovov.iib_camel.converter.report.UnitStatus;
@@ -40,6 +41,10 @@ public final class ConvertCommand implements Callable<Integer> {
             description = "Каталог вывода (создаётся при отсутствии; по умолчанию ./output).")
     private Path output;
 
+    @Option(names = "--no-strict",
+            description = "Не блокировать весь пакет; отдельные неподдерживаемые узлы остаются fail-fast.")
+    private boolean noStrict;
+
     private final List<String> errors = new ArrayList<>();
     private final List<UnitRow> nodes = new ArrayList<>();
     private final List<EsqlUnit> esqlUnits = new ArrayList<>();
@@ -48,6 +53,8 @@ public final class ConvertCommand implements Callable<Integer> {
     private int subflowFiles;
     private ArtifactOutput artifacts;
     private final Map<String, String> routeFiles = new LinkedHashMap<>();
+    private final Map<String, String> generatedSources = new LinkedHashMap<>();
+    private MappingProject mappingProject;
 
     record UnitRow(String flowName, String nodeId, String kind, UnitStatus status, String note) {
     }
@@ -72,6 +79,7 @@ public final class ConvertCommand implements Callable<Integer> {
         esqlUnits.clear();
         computeReferences.clear();
         routeFiles.clear();
+        generatedSources.clear();
         convertedFiles = 0;
         subflowFiles = 0;
         artifacts = new ArtifactOutput(output, "convert");
@@ -81,12 +89,17 @@ public final class ConvertCommand implements Callable<Integer> {
             System.err.println("Ошибка: .msgflow-файлы не найдены в " + input);
             return 3;
         }
+        mappingProject = MappingProject.load(input);
+        errors.addAll(mappingProject.errors());
         List<SourceFlow> flows = readFlows(files, ".msgflow");
         List<SourceFlow> subflows = readFlows(collect(".subflow"), ".subflow");
         subflowFiles = subflows.size();
         var generator = new EsqlToJavaGenerator();
         List<EsqlJob> jobs = readEsql(esqlFiles, generator);
         boolean valid = validateIdentities(flows, subflows, jobs);
+        var pathIssues = mappingProject.validateBodyPaths(jobs.stream().filter(j -> j.bean() != null)
+                .flatMap(j -> j.bean().statements().stream()).toList());
+        if (!pathIssues.isEmpty()) { errors.addAll(pathIssues); valid = false; }
         List<EsqlToJavaGenerator.ModelResult> models = List.of();
         try {
             models = generator.generateModels(jobs.stream().filter(j -> j.bean() != null)
@@ -108,7 +121,7 @@ public final class ConvertCommand implements Callable<Integer> {
                 Set<String> pendingSubflows = new LinkedHashSet<>(emittedSubflows);
                 RouteResult result = new RouteGenerator(flow, registry, pendingSubflows).generate();
                 String name = ArtifactOutput.fileStem(baseName(flow.name())) + "-route.xml";
-                artifacts.stage(name, result.xml());
+                generatedSources.put(name, result.xml());
                 routeFiles.put(flow.name(), name);
                 emittedSubflows.addAll(pendingSubflows);
                 convertedFiles++;
@@ -134,9 +147,25 @@ public final class ConvertCommand implements Callable<Integer> {
         }
         for (EsqlJob job : jobs) appendEsql(job, valid);
         if (valid) {
-            for (var model : models) artifacts.stage("models/" + model.className() + ".java", model.java());
+            var schemaSources = mappingProject.schemas().javaSources();
+            for (var model : models) {
+                if (!schemaSources.containsKey(model.className())) generatedSources.put("models/" + model.className() + ".java", model.java());
+            }
+            schemaSources.forEach((name, java) -> generatedSources.put("models/" + name + ".java", java));
+            for (var mapper : mappingProject.mappers()) {
+                generatedSources.put("mapping/" + mapper.className() + ".java", mapper.javaSource());
+                generatedSources.put("mapping/" + mapper.processorClassName() + ".java", mapper.processorJava());
+            }
         }
         validateComputeReferences();
+        boolean ready = errors.isEmpty() && nodes.stream().allMatch(n -> n.status() == UnitStatus.CONVERTED)
+                && esqlUnits.stream().allMatch(e -> e.status() == UnitStatus.CONVERTED);
+        if (!noStrict && !ready) {
+            generatedSources.replaceAll((name, java) -> name.endsWith("-route.xml")
+                    ? java.replaceAll("(<from\\b[^>]*?/>)", "$1\n    <throwException exceptionType=\"java.lang.UnsupportedOperationException\" message=\"Strict validation failed: see migration-report.md\"/>")
+                    : java);
+        }
+        generatedSources.forEach(artifacts::stage);
         writeReport();
         try {
             artifacts.publish();
@@ -147,7 +176,7 @@ public final class ConvertCommand implements Callable<Integer> {
             return 3;
         }
         printSummary(files.size(), esqlFiles.size());
-        return convertedFiles == 0 ? 3 : errors.isEmpty() ? 0 : 2;
+        return convertedFiles == 0 ? 3 : !errors.isEmpty() || !noStrict && !ready ? 2 : 0;
     }
 
     private List<SourceFlow> readFlows(List<Path> files, String extension) {
@@ -156,7 +185,7 @@ public final class ConvertCommand implements Callable<Integer> {
             try (var in = Files.newInputStream(file)) {
                 MsgFlow flow = new MsgFlowParser().parse(in);
                 if (flow.name().isBlank()) flow = new MsgFlow(stemOf(file) + extension, flow.nodes(), flow.connections());
-                result.add(new SourceFlow(file, flow));
+                result.add(new SourceFlow(file, mappingProject.bind(flow)));
             } catch (Exception e) { errors.add(file + ": " + e.getMessage()); }
         }
         return result;
@@ -214,6 +243,13 @@ public final class ConvertCommand implements Callable<Integer> {
             }
             index++;
         }
+        for (var mapper : mappingProject.mappers()) {
+            String owner = mapper.source().toString();
+            reserve(beans, mapper.beanName(), owner);
+            reserve(beans, mapper.mapperBeanName(), owner);
+            reserve(names, "mapping/" + mapper.className().toLowerCase(Locale.ROOT) + ".java", owner);
+            reserve(names, "mapping/" + mapper.processorClassName().toLowerCase(Locale.ROOT) + ".java", owner);
+        }
         return errors.size() == before;
     }
 
@@ -261,7 +297,7 @@ public final class ConvertCommand implements Callable<Integer> {
             for (var statement : bean.statements()) operators.add(new OperatorRow(job.module().name(), "Main",
                     statement.esql(), statement.status(), statement.note()));
             if (valid) {
-                artifacts.stage("beans/" + bean.className() + ".java", bean.java());
+                generatedSources.put("beans/" + bean.className() + ".java", bean.java());
                 long converted = bean.statements().stream().filter(s -> s.status() == UnitStatus.CONVERTED).count();
                 status = bean.complete() ? UnitStatus.CONVERTED : converted > 0 ? UnitStatus.PARTIAL : UnitStatus.MANUAL;
                 note = bean.complete() ? "бин `" + bean.beanId() + "` → `beans/" + bean.className() + ".java`"
@@ -327,6 +363,13 @@ public final class ConvertCommand implements Callable<Integer> {
     private void writeReport() {
         var report = new StringBuilder();
         report.append("# Отчёт о миграции\n\n");
+        boolean ready = errors.isEmpty() && nodes.stream().allMatch(n -> n.status() == UnitStatus.CONVERTED)
+                && esqlUnits.stream().allMatch(e -> e.status() == UnitStatus.CONVERTED);
+        report.append("Готовность пакета в профиле пилота: **").append(ready ? "да" : "нет")
+                .append("**. Строгая проверка: ").append(noStrict ? "отключена" : "включена")
+                .append(".\n\n");
+        if (!noStrict && !ready) report.append("Все маршруты пакета заблокированы до бизнес-операций.\n\n");
+        report.append(mappingProject.markdown()).append('\n');
         report.append("Конвертер iib-camel (one-shot CLI), FR-2.1–2.7, FR-3.1, FR-5.1–5.3. Источник: `")
                 .append(input).append("`.\n\n");
         report.append("""

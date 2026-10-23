@@ -278,17 +278,26 @@ the converter and executes them.
 
 ### 4.4. Connections (adapters)
 
-- **FR-R4.1. (Must)** IBM MQ connectivity via `camel-jms` and the IBM MQ client: connection parameters
-  (host, ports, channels, queues), connection pooling, delivery acknowledgement modes — set by external
-  configuration (`application.yml` / environment variables), without code changes.
-- **FR-R4.2. (Should)** Local JMS transactions support (`transacted`); XA transactions are out of scope
-  (see Won't).
+- **FR-R4.1. (Must)** Apache Artemis is the pilot's primary JMS provider through `camel-jms`. The
+  `artemis` profile connects to an external broker with persistent storage; embedded Artemis is for
+  local development and tests. URL, credentials, pool and queues are supplied through external
+  configuration, with no secrets stored in the repository. The required scenario is synchronous
+  InOnly queue → Camel/`direct:` → queue on one `ConnectionFactory` and one local JMS transaction.
+- **FR-R4.2. (Should)** IBM MQ is an optional JMS provider with a separate profile and broker. Host,
+  port, queue manager, channel, queues, pool, authentication and TLS are configurable. IBM MQ does not
+  block the Artemis pilot; IBM MQ behavior and JMS application-property to MQMD mapping must be verified
+  separately on IBM MQ and cannot be inferred from Artemis tests.
+- XA transactions and exactly-once guarantees are outside the current version (see Won't).
 
 ### 4.5. Reliability and observability
 
-- **FR-R5.1. (Must)** A single default error handler: `onException`/`errorHandler` with logging and a
-  dead letter route (recipient by configuration); generated routes must not require per-route error
-  customization in the baseline mode.
+- **FR-R5.1. (Must)** In the Artemis profile, the shared error policy works with the local JMS
+  transaction: an unhandled error rolls back the input and JMS sends from that attempt; after the
+  configured retry count, the original message is sent to the DLQ without rerunning the business route.
+  If sending to the DLQ fails, the transaction rolls back and quarantine is retried. The recipient and
+  bounded retry settings are configurable; generated routes need no per-route handler in the baseline
+  mode. This is a bounded redelivery contract, not exactly-once or a guarantee of an exact delivery
+  counter after every failure.
 - **FR-R5.2. (Should)** Observability: Actuator (`/actuator/health`, `/actuator/metrics`), Micrometer
   metrics (including per-route exchange counters), structured logging with the exchange identifier
   (correlation id) on every line.
@@ -308,14 +317,14 @@ the converter and executes them.
 
 | Priority | Requirements | Meaning of the boundary |
 |----------|-------------|------------------------|
-| **Must** | FR-1.1–1.5, FR-2.1, FR-2.2 (baseline nodes), FR-2.3, FR-2.5, FR-4.1 (baseline rules), FR-4.3, FR-4.4, FR-5.1, FR-7.1; FR-R1.1–R1.3, FR-R2.1, FR-R2.3, FR-R3.1, FR-R4.1, FR-R5.1, FR-R6.1 | First workable version: the converter parses the main artifacts, generates correct routes and a simple report; the runtime executes them and connects to MQ |
-| **Should** | FR-2.2 (extended nodes), FR-2.4, FR-2.6, FR-2.7, FR-3.1–3.5, FR-4.1 (complex rules), FR-4.2, FR-5.2, FR-6.1, FR-7.2, FR-8.1; FR-R2.2, FR-R3.2, FR-R4.2, FR-R5.2, FR-R5.3, FR-R6.2 | Conversion completeness (ESQL, Compute, subflow expansion), traceability, runtime observability |
+| **Must** | FR-1.1–1.5, FR-2.1, FR-2.2 (baseline nodes), FR-2.3, FR-2.5, FR-4.1 (baseline rules), FR-4.3, FR-4.4, FR-5.1, FR-7.1; FR-R1.1–R1.3, FR-R2.1, FR-R2.3, FR-R3.1, FR-R4.1 (Artemis), FR-R5.1, FR-R6.1 | The first workable version runs on Artemis within the described transactional queue-to-queue profile; IBM MQ is not a readiness condition |
+| **Should** | FR-2.2 (extended nodes), FR-2.4, FR-2.6, FR-2.7, FR-3.1–3.5, FR-4.1 (complex rules), FR-4.2, FR-5.2, FR-6.1, FR-7.2, FR-8.1; FR-R2.2, FR-R3.2, FR-R4.2 (IBM MQ, optional), FR-R5.2, FR-R5.3, FR-R6.2 | Conversion coverage within the bounded subset, traceability and observability; separate IBM MQ verification may be deferred without blocking the Artemis pilot |
 | **Could** | FR-5.3, FR-6.2, FR-7.3, FR-8.2; FR-R2.4, FR-R5.4, FR-R6.3 | Comfort and extensibility: statistics, SPI, web UI, hot reload, tracing, containerization |
 | **Won't** | see section 6 | Deliberately out of scope for the current version |
 
 Planned iterations:
 
-- **v1 (Must)** — a working end-to-end scenario "simple IIB flow → Camel route → runtime service";
+- **v1 (Must)** — a working end-to-end scenario "simple IIB flow → Camel route → runtime service on Artemis";
 - **v2 (Should)** — ESQL, Compute/MapStruct, extended nodes, observability;
 - **v3 (Could)** — extensibility and conveniences.
 

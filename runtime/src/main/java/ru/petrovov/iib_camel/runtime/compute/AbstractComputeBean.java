@@ -31,8 +31,13 @@ public abstract class AbstractComputeBean {
         Object previousSnapshot = exchange.getProperty(INPUT_SNAPSHOT);
         exchange.setProperty(INPUT_SNAPSHOT, new InputSnapshot(exchange.getIn().getBody(),
                 new HashMap<>(exchange.getIn().getHeaders())));
+        exchange.getIn().setBody(null);
+        exchange.getIn().setHeaders(new HashMap<>());
         try {
             main(exchange);
+        } catch (RuntimeException | Error failure) {
+            copy(exchange);
+            throw failure;
         } finally {
             if (previousSnapshot == null) {
                 exchange.removeProperty(INPUT_SNAPSHOT);
@@ -54,19 +59,21 @@ public abstract class AbstractComputeBean {
         exchange.getIn().setHeaders(new HashMap<>(snapshot.headers()));
     }
 
-    protected void mqmd(Exchange exchange, String field, String value) {
-        exchange.getIn().setHeader(field, value);
+    protected void mqmd(Exchange exchange, String field, Object value) {
+        if (value == null) exchange.getIn().removeHeader(field);
+        else exchange.getIn().setHeader(field, value);
         log.debug("MQMD.{} = {}", field, value);
     }
 
-    protected void setBodyField(Exchange exchange, String path, String value) {
+    protected void setBodyField(Exchange exchange, String path, Object value) {
         try {
             String[] segments = xmlPath(path);
             String body = exchange.getIn().getBody(String.class);
-            if (body == null || body.isBlank()) {
+            if (body == null && exchange.getProperty(INPUT_SNAPSHOT) == null) {
                 throw new IllegalStateException("тело пустое — XML-дерева нет");
             }
-            Document document = parseXml(body);
+            if (body == null && value == null) return;
+            Document document = body == null ? parseXml("<" + segments[0] + "/>") : parseXml(body);
             rejectNamespaces(document);
             Element current = document.getDocumentElement();
             if (!current.getTagName().equals(segments[0])) {
@@ -76,12 +83,19 @@ public abstract class AbstractComputeBean {
             for (int i = 1; i < segments.length; i++) {
                 Element child = directChild(current, segments[i]);
                 if (child == null) {
+                    if (value == null) return;
                     child = document.createElement(segments[i]);
                     current.appendChild(child);
                 }
                 current = child;
             }
-            current.setTextContent(value);
+            if (value == null) {
+                if (current == document.getDocumentElement()) {
+                    exchange.getIn().setBody(null);
+                    return;
+                }
+                current.getParentNode().removeChild(current);
+            } else current.setTextContent(EsqlValues.text(value));
             TransformerFactory factory = TransformerFactory.newInstance();
             factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
             factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
@@ -95,6 +109,47 @@ public abstract class AbstractComputeBean {
             throw new IllegalStateException("setBodyField(" + path + "): " + e.getMessage(), e);
         }
     }
+
+    protected Object bodyField(Exchange exchange, boolean input, String path) {
+        try {
+            String[] segments = xmlPath(path);
+            Object body = input ? snapshot(exchange).body() : exchange.getIn().getBody();
+            if (body == null) return null;
+            if (!(body instanceof String xml)) throw new IllegalArgumentException("XML body must be a String");
+            Document document = parseXml(xml);
+            rejectNamespaces(document);
+            Element current = document.getDocumentElement();
+            if (!current.getTagName().equals(segments[0])) return null;
+            for (int i = 1; i < segments.length; i++) {
+                current = directChild(current, segments[i]);
+                if (current == null) return null;
+            }
+            for (var child = current.getFirstChild(); child != null; child = child.getNextSibling()) {
+                if (child instanceof Element) throw new IllegalArgumentException("Scalar XML field required: " + path);
+            }
+            return current.getTextContent();
+        } catch (Exception e) {
+            throw new IllegalStateException("bodyField(" + path + "): " + e.getMessage(), e);
+        }
+    }
+
+    protected Object mqmdField(Exchange exchange, boolean input, String field) {
+        Object value = input ? snapshot(exchange).headers().get(field) : exchange.getIn().getHeader(field);
+        return value == null ? null : EsqlValues.text(value);
+    }
+
+    private static InputSnapshot snapshot(Exchange exchange) {
+        InputSnapshot snapshot = exchange.getProperty(INPUT_SNAPSHOT, InputSnapshot.class);
+        if (snapshot == null) throw new IllegalStateException("InputRoot access must be within compute");
+        return snapshot;
+    }
+
+    protected static Object esqlCast(Object value, String type) { return EsqlValues.cast(value, type); }
+    protected static Boolean esqlCompare(Object left, Object right, String operator) { return EsqlValues.compare(left, right, operator); }
+    protected static Boolean esqlAnd(Object left, java.util.function.Supplier<?> right) { return EsqlValues.andLazy(left, right); }
+    protected static Boolean esqlOr(Object left, java.util.function.Supplier<?> right) { return EsqlValues.orLazy(left, right); }
+    protected static Boolean esqlNot(Object value) { return EsqlValues.not(value); }
+    protected static boolean esqlTrue(Object value) { return EsqlValues.truth(value); }
 
     private static String[] xmlPath(String path) {
         if (path == null || !path.matches("[A-Za-z_][A-Za-z0-9_-]*(\\.[A-Za-z_][A-Za-z0-9_-]*)*")) {

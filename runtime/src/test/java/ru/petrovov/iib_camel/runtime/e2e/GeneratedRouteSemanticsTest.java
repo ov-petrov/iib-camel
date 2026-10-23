@@ -65,7 +65,8 @@ class GeneratedRouteSemanticsTest {
                     }
                 }
             });
-            String xml = new RouteGenerator(flow(mode, rules)).generate().xml().replace("jms:", "direct:");
+            String xml = new RouteGenerator(flow(mode, rules)).generate().xml().replaceAll("jms:([^?]+)\\?transacted=true&amp;disableReplyTo=true", "direct:$1")
+                    .replace("jms:", "direct:");
             PluginHelper.getRoutesLoader(camel).loadRoutes(ResourceHelper.fromString("Probe-route.xml", xml));
             camel.start();
             try (var producer = camel.createProducerTemplate()) { producer.sendBody("direct:IN", body); }

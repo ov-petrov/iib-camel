@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="urn:customer" elementFormDefault="qualified">
+    <xs:element name="Customer">
+        <xs:complexType><xs:sequence>
+            <xs:element name="name" type="xs:string"/>
+            <xs:element name="balance" type="xs:decimal"/>
+            <xs:element name="untouched" type="xs:string" minOccurs="0"/>
+        </xs:sequence></xs:complexType>
+    </xs:element>
+    <xs:element name="CustomerView">
+        <xs:complexType><xs:sequence>
+            <xs:element name="displayName" type="xs:string"/>
+            <xs:element name="amount" type="xs:decimal"/>
+            <xs:element name="untouched" type="xs:string" minOccurs="0"/>
+        </xs:sequence></xs:complexType>
+    </xs:element>
+</xs:schema>

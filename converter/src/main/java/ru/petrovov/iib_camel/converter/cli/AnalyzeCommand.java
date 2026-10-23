@@ -11,6 +11,9 @@ import ru.petrovov.iib_camel.converter.esql.EsqlModule;
 import ru.petrovov.iib_camel.converter.esql.EsqlParser;
 import ru.petrovov.iib_camel.converter.msgflow.MsgFlow;
 import ru.petrovov.iib_camel.converter.msgflow.MsgFlowParser;
+import ru.petrovov.iib_camel.converter.project.MappingProject;
+import ru.petrovov.iib_camel.converter.project.ProjectValidation;
+import ru.petrovov.iib_camel.converter.report.UnitStatus;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.ITypeConverter;
@@ -26,6 +29,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
@@ -63,6 +67,9 @@ public final class AnalyzeCommand implements Callable<Integer> {
 
     @Option(names = "--fail-fast", description = "Остановить пакетную обработку на первой ошибке разбора.")
     boolean failFast;
+
+    @Option(names = "--strict", description = "Код 2, если проект не готов к профилю пилота, включая неподдерживаемые конструкции.")
+    boolean strict;
 
     static final class PathConverter implements ITypeConverter<Path> {
         @Override
@@ -115,29 +122,20 @@ public final class AnalyzeCommand implements Callable<Integer> {
         Path base = Files.isDirectory(input) ? input : input.getParent() == null ? Path.of(".") : input.getParent();
 
         Map<String, Set<String>> usedByExt = new HashMap<>();
+        usedByExt.put(".md", new HashSet<>(Set.of("project-validation.md", "esql-inventory.md")));
         int rendered = 0;
         int artifacts = 0;
         int failures = 0;
         int nodes = 0;
         int edges = 0;
         List<EsqlInventoryRenderer.EsqlFileInfo> esqlInfos = new ArrayList<>();
+        Map<Path, MsgFlow> parsedFlows = new LinkedHashMap<>();
 
         for (Path file : files) {
             try (InputStream in = Files.newInputStream(file)) {
                 MsgFlow flow = parser.parse(in);
-                String name = ArtifactOutput.fileStem(diagramName(flow.name(), stemOf(file)));
-                String relative = base.relativize(file).toString();
-                for (String extension : formats) {
-                    String fileName = uniqueName(name, extension,
-                            usedByExt.computeIfAbsent(extension, k -> new HashSet<>()));
-                    String content = switch (extension) {
-                        case ".adoc" -> adocRenderer.render(flow, relative);
-                        case ".md" -> analysisRenderer.render(flow, orient, relative);
-                        default -> mermaidRenderer.render(flow, orient);
-                    };
-                    artifactOutput.stage(fileName, content);
-                    artifacts++;
-                }
+                ArtifactOutput.fileStem(diagramName(flow.name(), stemOf(file)));
+                parsedFlows.put(file, flow);
                 rendered++;
                 nodes += flow.nodes().size();
                 edges += flow.connections().size();
@@ -176,6 +174,51 @@ public final class AnalyzeCommand implements Callable<Integer> {
             artifactOutput.stage("esql-inventory.md", esqlResult.markdown());
         }
 
+        MappingProject mappings = MappingProject.load(input);
+        parsedFlows.replaceAll((file, flow) -> mappings.bind(flow));
+        var modules = esqlInfos.stream().flatMap(info -> info.modules().stream()).toList();
+        var diagnoses = ProjectValidation.inspect(parsedFlows, modules);
+        boolean ready = failures + esqlFailures == 0 && mappings.errors().isEmpty()
+                && diagnoses.values().stream().flatMap(List::stream).allMatch(d -> d.status() == UnitStatus.CONVERTED);
+        var projectReport = new StringBuilder("# Проверка проекта\n\nГотовность к профилю пилота: **")
+                .append(ready ? "да" : "нет").append("**.\n\n");
+        for (var source : parsedFlows.entrySet()) {
+            Path file = source.getKey();
+            MsgFlow flow = source.getValue();
+            String name = ArtifactOutput.fileStem(diagramName(flow.name(), stemOf(file)));
+            String relative = base.relativize(file).toString();
+            for (String extension : formats) {
+                String fileName = uniqueName(name, extension, usedByExt.computeIfAbsent(extension, k -> new HashSet<>()));
+                String content = switch (extension) {
+                    case ".adoc" -> adocRenderer.render(flow, relative);
+                    case ".md" -> analysisRenderer.render(flow, orient, relative, diagnoses.get(file));
+                    default -> mermaidRenderer.render(flow, orient);
+                };
+                artifactOutput.stage(fileName, content);
+                artifacts++;
+            }
+            projectReport.append("## ").append(relative).append("\n\n");
+            var issues = diagnoses.get(file).stream().filter(d -> d.status() != UnitStatus.CONVERTED).toList();
+            if (issues.isEmpty()) projectReport.append("Проверки пройдены.\n\n");
+            issues.forEach(d -> projectReport.append("- `").append(d.nodeId()).append("`: ").append(d.note()).append('\n'));
+        }
+        for (var module : modules) {
+            try {
+                var bean = new ru.petrovov.iib_camel.converter.esql.EsqlToJavaGenerator().generate(module);
+                if (!bean.complete()) {
+                    ready = false;
+                    projectReport.append("\nESQL `").append(module.name()).append("`: ").append(String.join("; ", bean.issues())).append('\n');
+                }
+            } catch (RuntimeException e) {
+                ready = false;
+                projectReport.append("\nESQL `").append(module.name()).append("`: ").append(e.getMessage()).append('\n');
+            }
+        }
+        projectReport.append(mappings.markdown());
+        if (failures + esqlFailures > 0) projectReport.append("\nОшибок разбора: ").append(failures + esqlFailures).append(". См. stderr и ESQL-инвентарь.\n");
+        artifactOutput.stage("project-validation.md", ready ? projectReport.toString()
+                : projectReport.toString().replace("пилота: **да**", "пилота: **нет**"));
+
         try {
             artifactOutput.publish();
         } catch (IOException | IllegalArgumentException e) {
@@ -197,7 +240,7 @@ public final class AnalyzeCommand implements Callable<Integer> {
                     + "), esql-inventory.md");
         }
         System.out.println(", ошибок " + (failures + esqlFailures));
-        return (failures + esqlFailures) == 0 ? 0
+        return (failures + esqlFailures) == 0 ? strict && !ready ? 2 : 0
                 : (rendered > 0 || esqlResult != null ? 2 : 3);
     }
 

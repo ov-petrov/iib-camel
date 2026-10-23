@@ -108,12 +108,34 @@ class EsqlToJavaGeneratorTest {
         assertEquals("Order", model.className());
         assertTrue(model.java().startsWith("package ru.petrovov.iib_camel.runtime.generated.model;\n\n"),
                 "модели — под-пакет generated.model");
-        assertTrue(model.java().contains("private String Status;"), "поле из ESQL-пути Order.Status");
-        assertTrue(model.java().contains("private String Rating;"),
+        assertTrue(model.java().contains("private String status;"), "поле из ESQL-пути Order.Status");
+        assertTrue(model.java().contains("private String rating;"),
                 "поле из ESQL-пути Order.Rating (CAST)");
         assertTrue(model.java().contains("CAST('100' AS DECIMAL)"),
                 "источник поля виден в javadoc-комментарии");
         assertTrue(model.java().contains("FR-3.4"), "модель помечена уровнем FR-3.4");
+    }
+
+    @Test
+    void collectsStringModelFieldsFromCastAssignmentsInsideIf() {
+        String esql = """
+                BROKER SCHEMA adjust
+                CREATE COMPUTE MODULE Adjust_Compute1
+                  CREATE FUNCTION Main() RETURNS BOOLEAN
+                  BEGIN
+                    IF CAST(InputRoot.XMLNSC.Order.Amount AS DECIMAL) > 10 THEN
+                      SET OutputRoot.XMLNSC.Order.Amount = CAST('12.50' AS DECIMAL);
+                    END IF;
+                    RETURN TRUE;
+                  END;
+                END MODULE;
+                """;
+        var bean = new EsqlToJavaGenerator().generate(new EsqlParser().parse(esql));
+
+        assertEquals(1, bean.models().size());
+        assertTrue(bean.models().getFirst().java().contains("private String amount;"),
+                "тип ESQL CAST не меняет строковый fallback модели");
+        assertTrue(bean.models().getFirst().java().contains("CAST('12.50' AS DECIMAL)"));
     }
 
     @Test

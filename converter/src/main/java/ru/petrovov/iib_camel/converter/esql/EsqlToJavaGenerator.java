@@ -1,5 +1,6 @@
 package ru.petrovov.iib_camel.converter.esql;
 
+import ru.petrovov.iib_camel.converter.java.JavaNames;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -13,7 +14,7 @@ public final class EsqlToJavaGenerator {
     public static final String GENERATED_MODEL_PACKAGE = GENERATED_PACKAGE + ".model";
 
     private static final Pattern SET_BODY_FIELD =
-            Pattern.compile("(?s)^setBodyField\\(exchange, \\\"([^\\\"]+)\\\", \\\"(.*)\\\"\\);$");
+            Pattern.compile("setBodyField\\(exchange, \\\"([^\\\"]+)\\\", [^\\n]*?\\);");
 
     public record BeanResult(String className, String beanId, String java,
                              List<EsqlTranslator.StatementTranslation> statements,
@@ -32,7 +33,8 @@ public final class EsqlToJavaGenerator {
                 .orElseThrow(() -> new IllegalArgumentException(
                         "модуль \"" + module.name() + "\": функция Main не найдена"));
 
-        EsqlTranslator.FunctionTranslation translation = new EsqlTranslator(main).translate();
+        EsqlTranslator translator = new EsqlTranslator(main);
+        EsqlTranslator.FunctionTranslation translation = translator.translate();
         List<String> moduleIssues = new ArrayList<>(translation.issues());
         for (EsqlFunction function : module.functions()) {
             if (!function.name().equalsIgnoreCase("Main")) {
@@ -60,7 +62,7 @@ public final class EsqlToJavaGenerator {
         for (EsqlTranslator.StatementTranslation statement : translation.statements()) {
             appendComment(java, statement.esql(), "", "        ");
             if (complete) {
-                java.append("        ").append(statement.java()).append('\n');
+                statement.java().lines().forEach(line -> java.append("        ").append(line).append('\n'));
             }
         }
         for (String issue : moduleIssues) {
@@ -72,7 +74,7 @@ public final class EsqlToJavaGenerator {
         }
         java.append("    }\n}\n");
         return new BeanResult(className, beanId, java.toString(), translation.statements(),
-                generateModels(translation.statements()), complete, List.copyOf(moduleIssues));
+                generateModels(translator.modelStatements()), complete, List.copyOf(moduleIssues));
     }
 
     private static void appendComment(StringBuilder java, String source, String prefix, String indent) {
@@ -85,13 +87,11 @@ public final class EsqlToJavaGenerator {
         Map<String, ModelAccumulator> models = new LinkedHashMap<>();
         for (EsqlTranslator.StatementTranslation statement : statements) {
             Matcher matcher = SET_BODY_FIELD.matcher(statement.java());
-            if (!matcher.matches()) {
-                continue;
-            }
+            while (matcher.find()) {
             String path = matcher.group(1);
             String[] segments = path.split("\\.");
             String root = segments[0];
-            String leafName = segments.length == 2 ? segments[1] : camelize(segments[segments.length - 1]);
+            String leafName = JavaNames.propertyName(segments[segments.length - 1]);
             String className = pascalize(root);
             ModelAccumulator model = models.computeIfAbsent(className, k -> new ModelAccumulator(root));
             if (!model.root.equals(root)) {
@@ -107,6 +107,7 @@ public final class EsqlToJavaGenerator {
                         + " сворачиваются в поле " + className + "." + leafName);
             }
             field.sources.add(statement.esql());
+            }
         }
         List<ModelResult> result = new ArrayList<>();
         for (var entry : models.entrySet()) {
@@ -120,10 +121,10 @@ public final class EsqlToJavaGenerator {
                     appendComment(java, source, "", "    ");
                 }
                 java.append("    private String ").append(field.getKey()).append(";\n\n")
-                    .append("    public String ").append(field.getKey()).append("() {\n")
+                    .append("    public String ").append(JavaNames.getterName(field.getKey())).append("() {\n")
                     .append("        return ").append(field.getKey()).append(";\n")
                     .append("    }\n\n")
-                    .append("    public void set").append(field.getKey())
+                    .append("    public void ").append(JavaNames.setterName(field.getKey()))
                     .append("(String value) {\n")
                     .append("        this.").append(field.getKey()).append(" = value;\n")
                     .append("    }\n\n");
@@ -153,20 +154,10 @@ public final class EsqlToJavaGenerator {
     }
 
     public static String camelize(String module) {
-        String[] parts = module.split("[_-]");
-        var result = new StringBuilder(lowerFirst(parts[0]));
-        for (int i = 1; i < parts.length; i++) {
-            result.append(Character.toUpperCase(parts[i].charAt(0))).append(parts[i].substring(1));
-        }
-        return result.toString();
+        return JavaNames.propertyName(module);
     }
 
     private static String pascalize(String module) {
-        String camel = camelize(module);
-        return Character.toUpperCase(camel.charAt(0)) + camel.substring(1);
-    }
-
-    private static String lowerFirst(String s) {
-        return s.isEmpty() ? s : Character.toLowerCase(s.charAt(0)) + s.substring(1);
+        return JavaNames.className(module);
     }
 }

@@ -97,8 +97,10 @@ class GeneratedGraphSemanticsTest {
                 }
             });
             String firstXml = new RouteGenerator(firstParent, subflows, emittedSubflows).generate().xml()
+                    .replaceAll("jms:([^?]+)\\?transacted=true&amp;disableReplyTo=true", "direct:$1")
                     .replace("jms:", "direct:");
             String secondXml = new RouteGenerator(secondParent, subflows, emittedSubflows).generate().xml()
+                    .replaceAll("jms:([^?]+)\\?transacted=true&amp;disableReplyTo=true", "direct:$1")
                     .replace("jms:", "direct:");
             PluginHelper.getRoutesLoader(camel).loadRoutes(ResourceHelper.fromString("ParentA-route.xml", firstXml));
             PluginHelper.getRoutesLoader(camel).loadRoutes(ResourceHelper.fromString("ParentB-route.xml", secondXml));
@@ -316,7 +318,8 @@ class GeneratedGraphSemanticsTest {
                     }
                 }
             });
-            String xml = new RouteGenerator(flow, subflows).generate().xml().replace("jms:", "direct:");
+            String xml = new RouteGenerator(flow, subflows).generate().xml().replaceAll("jms:([^?]+)\\?transacted=true&amp;disableReplyTo=true", "direct:$1")
+                    .replace("jms:", "direct:");
             PluginHelper.getRoutesLoader(camel).loadRoutes(ResourceHelper.fromString("GeneratedGraph-route.xml", xml));
             camel.start();
             try (var producer = camel.createProducerTemplate()) {

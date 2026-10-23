@@ -19,7 +19,9 @@ import java.util.Map;
 import java.util.Objects;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 @SpringBootTest
 @Timeout(120)
@@ -101,6 +103,9 @@ class E2eDatasetTest {
         String actualBody = ((TextMessage) received).getText().strip();
         assertEquals(expectedBody, actualBody,
                 name + ": тело сообщения изменилось в маршруте");
+        for (String property : (List<String>) expect.getOrDefault("absentProperties", List.of())) {
+            assertFalse(received.propertyExists(property), name + ": не восстановлен входной заголовок " + property);
+        }
         if (expectMqmd != null) {
             Integer expectedPriority = (Integer) expectMqmd.get("priority");
             if (expectedPriority != null) {
@@ -124,6 +129,10 @@ class E2eDatasetTest {
                 assertEquals(comment, received.getStringProperty("CommentField"),
                         name + ": MQMD.CommentField отсутствует");
             }
+        }
+        jmsTemplate.setReceiveTimeout(150);
+        for (String queue : queuesOf(dir)) {
+            assertNull(jmsTemplate.receive(queue), name + ": лишняя доставка в " + queue);
         }
     }
 

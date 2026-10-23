@@ -103,7 +103,8 @@ class RouteRuleGenerationTest {
                 List.of(new FlowConnection("Input---quoted", "out", "Output", "in")));
         Document escaped = parse(new RouteGenerator(special).generate().xml());
         assertEquals("A&B\"", ((org.w3c.dom.Element) escaped.getElementsByTagName("route").item(0)).getAttribute("id"));
-        assertEquals("jms:IN&A<\"B", ((org.w3c.dom.Element) escaped.getElementsByTagName("from").item(0)).getAttribute("uri"));
+        assertEquals("jms:IN&A<\"B?transacted=true&disableReplyTo=true",
+                ((org.w3c.dom.Element) escaped.getElementsByTagName("from").item(0)).getAttribute("uri"));
         assertEquals("jms:OUT&A<\"B", ((org.w3c.dom.Element) escaped.getElementsByTagName("to").item(0)).getAttribute("uri"));
     }
 

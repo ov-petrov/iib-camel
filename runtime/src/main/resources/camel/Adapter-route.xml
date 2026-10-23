@@ -2,7 +2,7 @@
 <routes xmlns="http://camel.apache.org/schema/spring">
   <!-- source: узел Input (MQInput) -->
   <route id="Adapter">
-    <from uri="jms:ADAPTER.IN"/>
+    <from uri="jms:ADAPTER.IN?transacted=true&amp;disableReplyTo=true"/>
     <bean beanType="ru.petrovov.iib_camel.runtime.compute.MessageSnapshots" method="capture"/>
     <doTry>
       <!-- source: узел Enrich (Compute) -->

@@ -67,11 +67,16 @@ class ConvertCommandTest {
 
         int exit = run(input, output);
 
-        assertEquals(0, exit, "подпоток найден во входном наборе → код 0");
+        assertEquals(2, exit, "неподдерживаемый Trace блокирует пакет в строгом режиме");
+        assertTrue(Files.readString(output.resolve("Order-route.xml")).contains("Strict validation failed"),
+                "строгий режим блокирует маршрут до бизнес-операций");
+        Path reviewOutput = tempDir.resolve("out-corr02-review");
+        assertEquals(0, runNoStrict(input, reviewOutput));
+        assertTrue(!Files.readString(reviewOutput.resolve("Order-route.xml")).contains("Strict validation failed"));
         String golden = Files.readString(
                 Path.of("src/test/resources/corpus/corr-02-subflows/expected/Order-route.xml"),
                 StandardCharsets.UTF_8);
-        assertEquals(golden, Files.readString(output.resolve("Order-route.xml")),
+        assertEquals(golden, Files.readString(reviewOutput.resolve("Order-route.xml")),
                 "маршрут побайтово равен golden-файлу (родитель + вложенный direct-маршрут)");
 
         String report = Files.readString(output.resolve("migration-report.md"), StandardCharsets.UTF_8);
@@ -98,23 +103,27 @@ class ConvertCommandTest {
 
         int exit = run(input, output);
 
-        assertEquals(0, exit);
+        assertEquals(2, exit, "неподдерживаемый ESQL блокирует пакет в строгом режиме");
+        assertTrue(Files.readString(output.resolve("Adjust-route.xml")).contains("Strict validation failed"));
+        Path reviewOutput = tempDir.resolve("out-corr03-review");
+        assertEquals(0, runNoStrict(input, reviewOutput));
+        assertTrue(!Files.readString(reviewOutput.resolve("Adjust-route.xml")).contains("Strict validation failed"));
         String golden = Files.readString(
                 Path.of("src/test/resources/corpus/corr-03-esql-mapping/expected/Adjust-route.xml"),
                 StandardCharsets.UTF_8);
-        assertEquals(golden, Files.readString(output.resolve("Adjust-route.xml")));
+        assertEquals(golden, Files.readString(reviewOutput.resolve("Adjust-route.xml")));
         String goldenBean = Files.readString(
                 Path.of("src/test/resources/corpus/corr-03-esql-mapping/expected/AdjustCompute1.java"),
                 StandardCharsets.UTF_8);
-        assertEquals(goldenBean, Files.readString(output.resolve("beans/AdjustCompute1.java"),
+        assertEquals(goldenBean, Files.readString(reviewOutput.resolve("beans/AdjustCompute1.java"),
                 StandardCharsets.UTF_8), "бин побайтово равен golden (D-3)");
         String goldenModel = Files.readString(
                 Path.of("src/test/resources/corpus/corr-03-esql-mapping/expected/models/Order.java"),
                 StandardCharsets.UTF_8);
-        assertEquals(goldenModel, Files.readString(output.resolve("models/Order.java"),
+        assertEquals(goldenModel, Files.readString(reviewOutput.resolve("models/Order.java"),
                 StandardCharsets.UTF_8), "модель побайтово равна golden");
-        assertTrue(goldenModel.contains("private String Status;"));
-        assertTrue(goldenModel.contains("private String Rating;"));
+        assertTrue(goldenModel.contains("private String status;"));
+        assertTrue(goldenModel.contains("private String rating;"));
 
         String report = Files.readString(output.resolve("migration-report.md"), StandardCharsets.UTF_8);
         assertTrue(report.contains("| Adjust_Compute1.esql | Adjust_Compute1 | 1 | 4 | частично |"),
@@ -122,7 +131,7 @@ class ConvertCommandTest {
         assertTrue(report.contains(
                 "`SET OutputRoot.XMLNSC.Order.Rating = CAST('100' AS DECIMAL);` | конвертировано"),
                 "CAST переводится пооператорно");
-        assertTrue(report.contains("(тип DECIMAL)"), "тип CAST зафиксирован примечанием");
+        assertTrue(report.contains("(CAST('100' AS DECIMAL))"), "выражение CAST зафиксировано примечанием");
         assertTrue(report.contains("Непереводимые конструкции `Adjust_Compute1`"),
                 "причины непереводимости поимённо в отчёте");
         assertTrue(report.contains("POJO-модели тела (FR-3.4, первый уровень) для `Adjust_Compute1`"),
@@ -160,7 +169,7 @@ class ConvertCommandTest {
         Files.copy(Path.of("src/test/resources/corpus/corr-01-simple-adapter/Adapter.msgflow"),
                 input.resolve("Adapter.msgflow"));
         Path output = tempDir.resolve("out");
-        assertEquals(0, run(input, output));
+        assertEquals(2, run(input, output));
         String report = Files.readString(output.resolve("migration-report.md"));
         assertTrue(report.contains("| Enrich | Compute | требует ручной доработки |"));
         assertTrue(report.contains("неразрешённая Compute-ссылка"));
@@ -194,7 +203,7 @@ class ConvertCommandTest {
         String source = Files.readString(esql).replace("RETURN TRUE;", "RETURN FALSE;");
         Files.writeString(esql, source);
         Path output = tempDir.resolve("out");
-        assertEquals(0, run(input, output));
+        assertEquals(2, run(input, output));
         String report = Files.readString(output.resolve("migration-report.md"));
         assertTrue(report.contains("| Enrich | Compute | частично |"));
         assertTrue(report.contains("RETURN FALSE"));
@@ -205,6 +214,11 @@ class ConvertCommandTest {
     private static int run(Path input, Path output) {
         return new CommandLine(new ConvertCommand())
                 .execute("--input", input.toString(), "--output", output.toString());
+    }
+
+    private static int runNoStrict(Path input, Path output) {
+        return new CommandLine(new ConvertCommand())
+                .execute("--input", input.toString(), "--output", output.toString(), "--no-strict");
     }
 
     private Path copyFixture() throws IOException {

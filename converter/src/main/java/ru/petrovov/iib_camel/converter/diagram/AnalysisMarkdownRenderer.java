@@ -4,6 +4,8 @@ import ru.petrovov.iib_camel.converter.camel.RouteGenerator;
 import ru.petrovov.iib_camel.converter.msgflow.FlowConnection;
 import ru.petrovov.iib_camel.converter.msgflow.FlowNode;
 import ru.petrovov.iib_camel.converter.msgflow.MsgFlow;
+import ru.petrovov.iib_camel.converter.report.Diagnosis;
+import ru.petrovov.iib_camel.converter.report.UnitStatus;
 
 import java.util.List;
 import java.util.Map;
@@ -47,6 +49,20 @@ public final class AnalysisMarkdownRenderer {
     /** Отчёт со ссылкой на исходный файл (путь подаёт CLI — IR его не хранит). */
     public String render(MsgFlow flow, Orientation orientation, String sourceFile) {
         return build(flow, orientation, sourceFile);
+    }
+
+    public String render(MsgFlow flow, Orientation orientation, String sourceFile, List<Diagnosis> diagnoses) {
+        StringBuilder out = new StringBuilder(build(flow, orientation, sourceFile));
+        var issues = diagnoses.stream().filter(d -> d.status() != UnitStatus.CONVERTED).toList();
+        out.append("\n## Проверка проекта\n\nГотовность потока в профиле пилота: **")
+                .append(issues.isEmpty() ? "да" : "нет").append("**.\n\n")
+                .append("Проверены граф, подпотоки, Compute/Mapping-ссылки и поддержка операций в переданном наборе файлов.\n");
+        if (!issues.isEmpty()) {
+            out.append("\n| Узел | Статус | Причина |\n|---|---|---|\n");
+            issues.forEach(d -> out.append("| ").append(escapeCell(d.nodeId())).append(" | ")
+                    .append(d.status().label()).append(" | ").append(escapeCell(d.note())).append(" |\n"));
+        }
+        return out.toString();
     }
 
     private String build(MsgFlow flow, Orientation orientation, String sourceFile) {
@@ -119,6 +135,7 @@ public final class AnalysisMarkdownRenderer {
                .append("- расширение правил конвертера (FR-2.2, Should).\n");
         }
         out.append("\nСтатусы каждой единицы конвертации (после миграции) — в отчёте команды `convert`.\n");
+        out.append("Это покрытие типов узлов; само по себе оно не подтверждает готовность графа и зависимостей.\n");
     }
 
     private static String distinctKinds(List<FlowNode> nodes) {

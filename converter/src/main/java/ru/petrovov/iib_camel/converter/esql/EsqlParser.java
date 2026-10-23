@@ -99,7 +99,7 @@ public final class EsqlParser {
                     List<String> issues = new ArrayList<>(function.unsupportedFragments());
                     issues.add("неподдерживаемая сигнатура: " + fragment(source, tokens, headerStart, begin));
                     function = new EsqlFunction(function.name(), function.returnType(), function.assignments(),
-                            function.returnsTrue(), List.copyOf(issues));
+                            function.returnsTrue(), List.copyOf(issues), function.statements());
                 }
                 functions.add(function);
                 i = end + 1;
@@ -110,7 +110,7 @@ public final class EsqlParser {
                     List<String> issues = new ArrayList<>(function.unsupportedFragments());
                     issues.addAll(moduleIssues);
                     functions.set(f, new EsqlFunction(function.name(), function.returnType(), function.assignments(),
-                            function.returnsTrue(), List.copyOf(issues)));
+                            function.returnsTrue(), List.copyOf(issues), function.statements()));
                 }
             }
             modules.add(new EsqlModule(schema, name, type, List.copyOf(functions)));
@@ -126,6 +126,7 @@ public final class EsqlParser {
                                   String source, int start, int end) {
         List<Token> tokens = input.tokens();
         List<EsqlAssignment> assignments = new ArrayList<>();
+        List<EsqlStatement> statements = new ArrayList<>();
         List<String> unsupported = new ArrayList<>();
         boolean returnsTrue = false;
         int i = start;
@@ -134,7 +135,15 @@ public final class EsqlParser {
             Token token = tokens.get(i);
             if (BLOCKS.contains(token.upper())) {
                 i = blockEnd(tokens, i, end) + 1;
-                unsupported.add(fragment(source, tokens, statementStart, i));
+                if (token.is("IF")) {
+                    try {
+                        statements.add(conditional(input, source, statementStart, i));
+                    } catch (IllegalArgumentException e) {
+                        unsupported.add(fragment(source, tokens, statementStart, i));
+                    }
+                } else {
+                    unsupported.add(fragment(source, tokens, statementStart, i));
+                }
                 continue;
             }
             if (!token.is("SET") && !token.is("RETURN") && !SIMPLE_UNSUPPORTED.contains(token.upper())) {
@@ -161,6 +170,7 @@ public final class EsqlParser {
                 assignments.add(new EsqlAssignment(
                         input.clean().substring(tokens.get(statementStart + 1).start(), tokens.get(equals).start()).strip(),
                         input.clean().substring(tokens.get(equals + 1).start(), tokens.get(semicolon).start()).strip()));
+                statements.add(new EsqlStatement.Assignment(assignments.getLast()));
             } else if (token.is("RETURN") && matches(tokens, statementStart, "RETURN", "TRUE", ";")
                     && statementStart + 3 == end) {
                 returnsTrue = true;
@@ -181,7 +191,50 @@ public final class EsqlParser {
         if ("FILTER".equals(moduleType)) {
             unsupported.add("FILTER-модуль: булев RETURN управляет терминалами потока — требуется правило filter");
         }
-        return new EsqlFunction(name, returnType, List.copyOf(assignments), returnsTrue, List.copyOf(unsupported));
+        return new EsqlFunction(name, returnType, List.copyOf(assignments), returnsTrue, List.copyOf(unsupported), List.copyOf(statements));
+    }
+
+    private static EsqlStatement.Conditional conditional(Lexed input, String source, int start, int end) {
+        List<Token> tokens = input.tokens();
+        int then = start + 1;
+        while (then < end && !tokens.get(then).is("THEN")) then++;
+        if (then == end) throw error("IF без THEN", tokens.get(start));
+        String condition = fragment(input.clean(), tokens, start + 1, then);
+        EsqlExpression.condition(condition);
+        int cursor = then + 1;
+        List<EsqlStatement> whenTrue = new ArrayList<>();
+        List<EsqlStatement> whenFalse = new ArrayList<>();
+        List<EsqlStatement> branch = whenTrue;
+        while (cursor < end - 3) {
+            Token token = tokens.get(cursor);
+            if (token.is("ELSE")) {
+                if (branch == whenFalse) throw error("повторный ELSE", token);
+                branch = whenFalse;
+                cursor++;
+            } else if (token.is("ELSEIF")) {
+                if (branch == whenFalse) throw error("ELSEIF после ELSE", token);
+                whenFalse.add(conditional(input, source, cursor, end));
+                cursor = end - 3;
+            } else if (token.is("IF")) {
+                int nestedEnd = blockEnd(tokens, cursor, end) + 1;
+                branch.add(conditional(input, source, cursor, nestedEnd));
+                cursor = nestedEnd;
+            } else if (token.is("SET")) {
+                int semicolon = cursor + 1;
+                while (semicolon < end && !tokens.get(semicolon).is(";")) semicolon++;
+                int equals = cursor + 1;
+                while (equals < semicolon && !tokens.get(equals).is("=")) equals++;
+                if (equals == cursor + 1 || equals + 1 >= semicolon) throw error("некорректный SET", token);
+                branch.add(new EsqlStatement.Assignment(new EsqlAssignment(
+                        fragment(input.clean(), tokens, cursor + 1, equals),
+                        fragment(input.clean(), tokens, equals + 1, semicolon))));
+                cursor = semicolon + 1;
+            } else {
+                throw error("оператор IF вне подмножества", token);
+            }
+        }
+        return new EsqlStatement.Conditional(condition, List.copyOf(whenTrue), List.copyOf(whenFalse),
+                fragment(source, tokens, start, end));
     }
 
     private static int blockEnd(List<Token> tokens, int start, int limit) {

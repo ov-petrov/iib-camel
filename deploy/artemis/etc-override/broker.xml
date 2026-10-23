@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration xmlns="urn:activemq"
+               xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+               xsi:schemaLocation="urn:activemq /schema/artemis-configuration.xsd">
+  <core xmlns="urn:activemq:core">
+    <name>iib-camel-pilot</name>
+    <persistence-enabled>true</persistence-enabled>
+    <journal-type>NIO</journal-type>
+    <paging-directory>data/paging</paging-directory>
+    <bindings-directory>data/bindings</bindings-directory>
+    <journal-directory>data/journal</journal-directory>
+    <large-messages-directory>data/large-messages</large-messages-directory>
+    <journal-sync-transactional>true</journal-sync-transactional>
+    <journal-sync-non-transactional>true</journal-sync-non-transactional>
+    <acceptors>
+      <acceptor name="jms">tcp://0.0.0.0:61616?protocols=CORE</acceptor>
+    </acceptors>
+    <security-settings>
+      <security-setting match="#">
+        <permission type="createNonDurableQueue" roles="pilot"/>
+        <permission type="deleteNonDurableQueue" roles="pilot"/>
+        <permission type="createDurableQueue" roles="pilot"/>
+        <permission type="deleteDurableQueue" roles="pilot"/>
+        <permission type="createAddress" roles="pilot"/>
+        <permission type="deleteAddress" roles="pilot"/>
+        <permission type="consume" roles="pilot"/>
+        <permission type="browse" roles="pilot"/>
+        <permission type="send" roles="pilot"/>
+        <permission type="manage" roles="pilot"/>
+      </security-setting>
+    </security-settings>
+    <address-settings>
+      <address-setting match="#">
+        <!-- Application policy owns rollback retries and quarantine. -->
+        <max-delivery-attempts>-1</max-delivery-attempts>
+        <redelivery-delay>0</redelivery-delay>
+        <auto-create-queues>true</auto-create-queues>
+        <auto-create-addresses>true</auto-create-addresses>
+        <auto-delete-queues>false</auto-delete-queues>
+        <auto-delete-addresses>false</auto-delete-addresses>
+      </address-setting>
+    </address-settings>
+  </core>
+</configuration>

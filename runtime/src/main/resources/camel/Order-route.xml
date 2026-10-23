@@ -2,7 +2,7 @@
 <routes xmlns="http://camel.apache.org/schema/spring">
   <!-- source: узел Input (MQInput) -->
   <route id="Order">
-    <from uri="jms:ORDERS.IN"/>
+    <from uri="jms:ORDERS.IN?transacted=true&amp;disableReplyTo=true"/>
     <bean beanType="ru.petrovov.iib_camel.runtime.compute.MessageSnapshots" method="capture"/>
     <doTry>
       <removeProperty name="iib_complete_436865636b2e737562666c6f77"/>
@@ -30,8 +30,7 @@
     <from uri="direct:Check"/>
     <!-- source: узел CheckStep (Compute) -->
     <to uri="bean:checkCompute1"/>
-    <!-- TODO (FR-2.7): правило конвертации узла "Trace" не определено -->
-    <log message="Unsupported IIB node: Trace"/>
+    <throwException exceptionType="java.lang.UnsupportedOperationException" message="Unsupported IIB Trace TraceNode: правило конвертации не определено"/>
     <setProperty name="iib_complete_436865636b2e737562666c6f77">
       <constant>true</constant>
     </setProperty>

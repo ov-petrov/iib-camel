@@ -3,22 +3,21 @@ queues:
   - ORDERS.OUT
   - ORDERS.ERROR.Q
 cases:
-  - name: order-passes-subflow-check-and-goes-to-out
+  - name: unsupported-trace-restores-input-and-goes-to-error
     input:
       queue: ORDERS.IN
       message: messages/order-new.xml
     expect:
-      queue: ORDERS.OUT
-      mqmd:
-        commentField: CHECKED-BY-SUBFLOW
-  - name: priority-carried-through-subflow-check
+      queue: ORDERS.ERROR.Q
+      absentProperties: [CommentField]
+  - name: priority-retained-when-unsupported-trace-goes-to-error
     input:
       queue: ORDERS.IN
       message: messages/order-new.xml
       mqmd:
         priority: 6
     expect:
-      queue: ORDERS.OUT
+      queue: ORDERS.ERROR.Q
+      absentProperties: [CommentField]
       mqmd:
         priority: 6
-        commentField: CHECKED-BY-SUBFLOW

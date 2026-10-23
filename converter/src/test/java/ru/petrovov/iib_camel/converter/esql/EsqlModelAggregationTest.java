@@ -21,8 +21,8 @@ class EsqlModelAggregationTest {
 
         assertEquals(1, models.size());
         assertEquals("Order", models.getFirst().className());
-        assertTrue(models.getFirst().java().contains("private String Status;"));
-        assertTrue(models.getFirst().java().contains("private String Rating;"));
+        assertTrue(models.getFirst().java().contains("private String status;"));
+        assertTrue(models.getFirst().java().contains("private String rating;"));
     }
 
     @Test
@@ -33,7 +33,7 @@ class EsqlModelAggregationTest {
 
         assertEquals(1, models.size());
         String java = models.getFirst().java();
-        assertEquals(1, occurrences(java, "private String Status;"));
+        assertEquals(1, occurrences(java, "private String status;"));
         assertTrue(java.contains("SET OutputRoot.XMLNSC.Order.Status = 'OPEN';"));
         assertTrue(java.contains("SET OutputRoot.XMLNSC.Order.Status = 'CLOSED';"));
     }

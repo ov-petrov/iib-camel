@@ -26,7 +26,7 @@ class EsqlGeneratedExecutionTest {
     @Test
     void incompleteModulesThrowBeforeCallingAnyBusinessHelper() throws Exception {
         List<String> unsupported = List.of(
-                "IF TRUE THEN SET OutputRoot.MQMD.A = 'A'; ELSE SET OutputRoot.MQMD.B = 'B'; END IF;",
+                "IF UnknownCondition THEN SET OutputRoot.MQMD.A = 'A'; ELSE SET OutputRoot.MQMD.B = 'B'; END IF;",
                 "CASE TRUE WHEN TRUE THEN SET OutputRoot.MQMD.A = 'A'; ELSE SET OutputRoot.MQMD.B = 'B'; END CASE;",
                 "WHILE TRUE DO SET OutputRoot.MQMD.A = 'A'; END WHILE;",
                 "RETURN FALSE;", "PROPAGATE;", "DECLARE flag BOOLEAN TRUE;",

@@ -4,25 +4,25 @@ package ru.petrovov.iib_camel.runtime.generated.model;
 public class Order {
 
     // SET OutputRoot.XMLNSC.Order.Status = 'ADJUSTED';
-    private String Status;
+    private String status;
 
-    public String Status() {
-        return Status;
+    public String getStatus() {
+        return status;
     }
 
     public void setStatus(String value) {
-        this.Status = value;
+        this.status = value;
     }
 
     // SET OutputRoot.XMLNSC.Order.Rating = CAST('100' AS DECIMAL);
-    private String Rating;
+    private String rating;
 
-    public String Rating() {
-        return Rating;
+    public String getRating() {
+        return rating;
     }
 
     public void setRating(String value) {
-        this.Rating = value;
+        this.rating = value;
     }
 
 }
