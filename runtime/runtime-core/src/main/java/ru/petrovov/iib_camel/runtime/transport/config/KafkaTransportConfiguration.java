@@ -31,8 +31,12 @@ public class KafkaTransportConfiguration {
         configuration.setRequestRequiredAcks("all");
         configuration.setEnableIdempotence(true);
         configuration.setSecurityProtocol(properties.getSecurityProtocol());
-        if (properties.getSaslMechanism() != null) configuration.setSaslMechanism(properties.getSaslMechanism());
-        if (properties.getSaslJaasConfig() != null) configuration.setSaslJaasConfig(properties.getSaslJaasConfig());
+        if (properties.getSaslMechanism() != null) {
+            configuration.setSaslMechanism(properties.getSaslMechanism());
+        }
+        if (properties.getSaslJaasConfig() != null) {
+            configuration.setSaslJaasConfig(properties.getSaslJaasConfig());
+        }
         var tls = properties.getTls();
         configuration.setSslTruststoreLocation(tls.getTrustStore());
         configuration.setSslTruststorePassword(tls.getTrustStorePassword());
@@ -49,6 +53,7 @@ public class KafkaTransportConfiguration {
     @Bean(destroyMethod = "close")
     KafkaTransportSender kafkaTransportSender(KafkaTransportProperties properties) {
         var configuration = properties.producerConfiguration();
-        return new KafkaTransportSender(() -> new KafkaProducer<>(configuration), properties.getSendTimeout());
+        return new KafkaTransportSender(
+            () -> new KafkaProducer<>(configuration), properties.getSendTimeout());
     }
 }

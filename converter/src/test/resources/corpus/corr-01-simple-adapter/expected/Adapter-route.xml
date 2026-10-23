@@ -1,28 +1,22 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <routes xmlns="http://camel.apache.org/schema/spring">
-  <!-- source: узел Input (MQInput) -->
   <route id="Adapter">
     <from uri="jms:ADAPTER.IN?transacted=true&amp;disableReplyTo=true"/>
     <bean beanType="ru.petrovov.iib_camel.runtime.compute.MessageSnapshots" method="capture"/>
     <doTry>
-      <!-- source: узел Enrich (Compute) -->
       <to uri="bean:adapterCompute1"/>
-      <!-- source: узел RouteByStatus (Route) -->
       <choice>
         <when>
           <xpath>/Adapter/Order/status=&apos;HIGH&apos;</xpath>
-          <!-- source: узел PriorityQueue (MQOutput) -->
           <to uri="jms:ADAPTER.PRIORITY.Q"/>
         </when>
         <otherwise>
-          <!-- source: узел DefaultQueue (MQOutput) -->
           <to uri="jms:ADAPTER.DEFAULT.Q"/>
         </otherwise>
       </choice>
       <doCatch>
         <exception>java.lang.Exception</exception>
         <bean beanType="ru.petrovov.iib_camel.runtime.compute.MessageSnapshots" method="restore"/>
-        <!-- source: узел ErrorQueue (MQOutput) -->
         <to uri="jms:ADAPTER.ERROR.Q"/>
       </doCatch>
       <doFinally>

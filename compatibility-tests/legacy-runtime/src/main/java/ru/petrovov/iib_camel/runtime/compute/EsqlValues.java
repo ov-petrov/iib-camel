@@ -3,7 +3,7 @@ package ru.petrovov.iib_camel.runtime.compute;
 import java.math.BigDecimal;
 import java.util.Locale;
 
-/** Three-valued ESQL operations for the explicit scalar conversion profile. */
+
 public final class EsqlValues {
     private EsqlValues() {}
 

@@ -1,13 +1,9 @@
 package ru.petrovov.iib_camel.converter.esql;
 
-import ru.petrovov.iib_camel.converter.report.UnitStatus;
 import org.junit.jupiter.api.Test;
+import ru.petrovov.iib_camel.converter.report.UnitStatus;
 
-import java.nio.charset.StandardCharsets;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 class EsqlTranslatorTest {
 
@@ -79,7 +75,7 @@ class EsqlTranslatorTest {
 
         assertFalse(t.complete(), "выражение с умножением — не подмножество");
         assertEquals(UnitStatus.NOT_SUPPORTED, t.statements().get(0).status());
-        assertTrue(t.statements().get(0).java().startsWith("// TODO (FR-3.3)"));
+        assertTrue(t.statements().get(0).java().isEmpty());
         assertEquals(2, t.issues().size(), "обе причины в issues");
 
         var rootVar = t.statements().get(1);

@@ -1,6 +1,5 @@
 package ru.petrovov.iib_camel.runtime.transport.config;
 
-import java.util.Map;
 import org.apache.activemq.artemis.jms.client.ActiveMQConnectionFactory;
 import org.apache.camel.component.jms.JmsComponent;
 import org.messaginghub.pooled.jms.JmsPoolConnectionFactory;
@@ -12,6 +11,8 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.jms.connection.JmsTransactionManager;
 import org.springframework.jms.core.JmsTemplate;
 import ru.petrovov.iib_camel.runtime.transport.JmsTransportSender;
+
+import java.util.Map;
 
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnProperty(prefix = "iib.transports.artemis", name = "enabled", havingValue = "true")
@@ -45,30 +46,35 @@ public class ArtemisTransportConfiguration {
     }
 
     @Bean(destroyMethod = "stop")
-    JmsPoolConnectionFactory artemisConnectionFactory(@Qualifier("artemisNativeConnectionFactory") ActiveMQConnectionFactory factory,
-                                                    ArtemisTransportProperties properties) {
+    JmsPoolConnectionFactory artemisConnectionFactory(
+        @Qualifier("artemisNativeConnectionFactory") ActiveMQConnectionFactory factory,
+        ArtemisTransportProperties properties) {
         return JmsTransportSupport.pool(factory, properties);
     }
 
     @Bean
-    JmsTransactionManager artemisTransactionManager(@Qualifier("artemisConnectionFactory") JmsPoolConnectionFactory factory) {
+    JmsTransactionManager artemisTransactionManager(
+        @Qualifier("artemisConnectionFactory") JmsPoolConnectionFactory factory) {
         return new JmsTransactionManager(factory);
     }
 
     @Bean
-    JmsTemplate artemisJmsTemplate(@Qualifier("artemisConnectionFactory") JmsPoolConnectionFactory factory) {
+    JmsTemplate artemisJmsTemplate(
+        @Qualifier("artemisConnectionFactory") JmsPoolConnectionFactory factory) {
         return JmsTransportSupport.template(factory);
     }
 
     @Bean("artemis")
-    JmsComponent artemisComponent(@Qualifier("artemisConnectionFactory") JmsPoolConnectionFactory factory,
-                                 @Qualifier("artemisTransactionManager") JmsTransactionManager transactionManager) {
+    JmsComponent artemisComponent(
+        @Qualifier("artemisConnectionFactory") JmsPoolConnectionFactory factory,
+        @Qualifier("artemisTransactionManager") JmsTransactionManager transactionManager) {
         return JmsTransportSupport.component(factory, transactionManager);
     }
 
     @Bean
-    JmsTransportSender artemisTransportSender(@Qualifier("artemisJmsTemplate") JmsTemplate template,
-                                             @Qualifier("artemisTransactionManager") JmsTransactionManager transactionManager) {
+    JmsTransportSender artemisTransportSender(
+        @Qualifier("artemisJmsTemplate") JmsTemplate template,
+        @Qualifier("artemisTransactionManager") JmsTransactionManager transactionManager) {
         return new JmsTransportSender("artemis", template, transactionManager);
     }
 }

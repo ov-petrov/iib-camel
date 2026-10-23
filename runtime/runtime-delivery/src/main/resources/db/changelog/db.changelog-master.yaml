@@ -1,0 +1,9 @@
+databaseChangeLog:
+  - changeSet:
+      id: runtime-delivery-001
+      author: iib-camel
+      dbms: postgresql
+      changes:
+        - sqlFile:
+            path: sql/001-runtime-delivery.sql
+            relativeToChangelogFile: true

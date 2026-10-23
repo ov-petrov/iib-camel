@@ -6,7 +6,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
-/** Expression grammar deliberately excludes implicit casts, arithmetic and functions other than CAST. */
 final class EsqlExpression {
     enum Type { CHARACTER, INTEGER, DECIMAL, BOOLEAN, NULL }
     record Value(String java, Type type, Object constant, boolean literal) {}

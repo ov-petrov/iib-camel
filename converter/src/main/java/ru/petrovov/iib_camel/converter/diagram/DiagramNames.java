@@ -2,11 +2,6 @@ package ru.petrovov.iib_camel.converter.diagram;
 
 import java.util.Locale;
 
-/**
- * Вычисление имён артефактов диаграмм (общая политика для CLI и форматов вывода):
- * имя артефакта диаграммы = имя IR (nsURI) без суффикса расширения;
- * fallback — имя файла-источника без расширения.
- */
 public final class DiagramNames {
 
     private DiagramNames() {

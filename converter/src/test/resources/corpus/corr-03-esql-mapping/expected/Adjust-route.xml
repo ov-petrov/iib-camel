@@ -1,18 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <routes xmlns="http://camel.apache.org/schema/spring">
-  <!-- source: узел Input (MQInput) -->
   <route id="Adjust">
     <from uri="jms:ADJUST.IN?transacted=true&amp;disableReplyTo=true"/>
     <bean beanType="ru.petrovov.iib_camel.runtime.compute.MessageSnapshots" method="capture"/>
     <doTry>
-      <!-- source: узел Adjust (Compute) -->
       <to uri="bean:adjustCompute1"/>
-      <!-- source: узел Adjusted (MQOutput) -->
       <to uri="jms:ADJUST.OUT"/>
       <doCatch>
         <exception>java.lang.Exception</exception>
         <bean beanType="ru.petrovov.iib_camel.runtime.compute.MessageSnapshots" method="restore"/>
-        <!-- source: узел ErrorQueue (MQOutput) -->
         <to uri="jms:ADJUST.ERROR.Q"/>
       </doCatch>
       <doFinally>

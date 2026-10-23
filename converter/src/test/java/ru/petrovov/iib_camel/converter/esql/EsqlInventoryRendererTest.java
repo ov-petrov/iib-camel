@@ -7,10 +7,6 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Системный инвентарь ESQL «как есть» для analyze: вердикты по подмножеству FR-3.2,
- * честная строка ошибки разбора, детерминизм документа (D-3).
- */
 class EsqlInventoryRendererTest {
 
     private static final String FULL_MODULE = """
@@ -25,7 +21,6 @@ class EsqlInventoryRendererTest {
             END MODULE;
             """;
 
-    /** Вне подмножества: IF (ветвление) + функция кроме Main — значит «частично». */
     private static final String PARTIAL_MODULE = """
             BROKER SCHEMA adjust
             CREATE COMPUTE MODULE Adjust_Compute1
@@ -41,7 +36,6 @@ class EsqlInventoryRendererTest {
             END MODULE;
             """;
 
-    /** Модуль без Main: вне переводимого подмножества по определению. */
     private static final String NO_MAIN_MODULE = """
             BROKER SCHEMA aux
             CREATE COMPUTE MODULE Detector_Compute1
@@ -74,7 +68,6 @@ class EsqlInventoryRendererTest {
 
         assertTrue(result.markdown().contains(
                 "| `Check.esql` | Check_Compute1 | COMPUTE | 1 | 2 | 0 | переводимо полностью |"));
-        // IF уходит в issues (не оператор): 2 переведено, 1 конструкция вне подмножества
         assertTrue(result.markdown().contains(
                 "| `Adjust.esql` | Adjust_Compute1 | COMPUTE | 1 | 2 | 1 | переводимо частично (2 операторов переведено) |"));
         assertTrue(result.markdown().contains(

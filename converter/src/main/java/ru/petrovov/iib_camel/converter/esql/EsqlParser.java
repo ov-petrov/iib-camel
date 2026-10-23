@@ -5,7 +5,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
-/** Разбор ограниченного подмножества ESQL с сохранением неподдерживаемых блоков. */
 public final class EsqlParser {
 
     private static final Set<String> BLOCKS = Set.of("BEGIN", "IF", "CASE", "WHILE", "REPEAT", "LOOP", "FOR");
@@ -147,7 +146,6 @@ public final class EsqlParser {
                 continue;
             }
             if (!token.is("SET") && !token.is("RETURN") && !SIMPLE_UNSUPPORTED.contains(token.upper())) {
-                // Неизвестная конструкция может открывать блок: остаток тела остаётся целиком.
                 unsupported.add(fragment(source, tokens, i, end));
                 break;
             }

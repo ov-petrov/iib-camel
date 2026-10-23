@@ -1,15 +1,16 @@
 package ru.petrovov.iib_camel.runtime.transport.config;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.security.KeyStore;
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManagerFactory;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.KeyStore;
 
 final class TlsContextFactory {
-    private TlsContextFactory() { }
+    private TlsContextFactory() {
+    }
 
     static SSLSocketFactory socketFactory(TlsProperties properties) throws Exception {
         if (properties.getKeyStore() == null && properties.getTrustStore() == null) {
@@ -29,15 +30,23 @@ final class TlsContextFactory {
         if (keyStore != null && !keyStore.isBlank()) {
             keys = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
             var store = load(keyStore, keyStoreType, keyStorePassword);
-            var password = properties.getKeyPassword() == null ? keyStorePassword : properties.getKeyPassword();
+            var password = properties.getKeyPassword() == null
+                ? keyStorePassword
+                : properties.getKeyPassword();
             keys.init(store, chars(password));
         }
         if (properties.getTrustStore() != null) {
             trust = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
-            trust.init(load(properties.getTrustStore(), properties.getTrustStoreType(), properties.getTrustStorePassword()));
+            trust.init(load(
+                properties.getTrustStore(),
+                properties.getTrustStoreType(),
+                properties.getTrustStorePassword()));
         }
         SSLContext context = SSLContext.getInstance("TLS");
-        context.init(keys == null ? null : keys.getKeyManagers(), trust == null ? null : trust.getTrustManagers(), null);
+        context.init(
+            keys == null ? null : keys.getKeyManagers(),
+            trust == null ? null : trust.getTrustManagers(),
+            null);
         return context.getSocketFactory();
     }
 
@@ -47,9 +56,13 @@ final class TlsContextFactory {
             store.load(null, chars(password));
             return store;
         }
-        try (var input = Files.newInputStream(Path.of(path))) { store.load(input, chars(password)); }
+        try (var input = Files.newInputStream(Path.of(path))) {
+            store.load(input, chars(password));
+        }
         return store;
     }
 
-    private static char[] chars(String value) { return value == null ? null : value.toCharArray(); }
+    private static char[] chars(String value) {
+        return value == null ? null : value.toCharArray();
+    }
 }

@@ -1,4 +1,3 @@
-* Application owns poison routing; IBM client backout routing must not preempt it.
 DEFINE QLOCAL('DEV.IIB.IN') DEFPSIST(YES) BOTHRESH(0) REPLACE
 DEFINE QLOCAL('DEV.IIB.OUT') DEFPSIST(YES) REPLACE
 DEFINE QLOCAL('DEV.IIB.DLQ') DEFPSIST(YES) REPLACE

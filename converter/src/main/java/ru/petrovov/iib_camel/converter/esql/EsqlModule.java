@@ -3,7 +3,6 @@ package ru.petrovov.iib_camel.converter.esql;
 import java.util.List;
 import java.util.Optional;
 
-/** Модуль ESQL и его функции. */
 public record EsqlModule(String schema, String name, String type, List<EsqlFunction> functions) {
 
     public Optional<EsqlFunction> function(String name) {

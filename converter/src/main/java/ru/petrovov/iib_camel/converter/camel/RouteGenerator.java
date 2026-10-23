@@ -7,12 +7,7 @@ import ru.petrovov.iib_camel.converter.report.Diagnosis;
 import ru.petrovov.iib_camel.converter.report.RouteResult;
 import ru.petrovov.iib_camel.converter.report.UnitStatus;
 
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 public final class RouteGenerator {
     private static final String CAMEL_NS = "http://camel.apache.org/schema/spring";
@@ -48,8 +43,7 @@ public final class RouteGenerator {
             visited.add(input.id());
             diagnoseInput(input, raw);
             String id = routeId(flow.name()) + (inputs.size() > 1 ? "-" + input.id() : "");
-            out.append(line(1, commentFor(input)))
-               .append(line(1, "<route id=\"" + xml(id) + "\">"))
+            out.append(line(1, "<route id=\"" + xml(id) + "\">"))
                .append(line(2, "<from uri=\"" + xml("jms:" + queue(input)
                        + "?transacted=true&disableReplyTo=true") + "\"/>"));
             if (!rawValidationErrors(raw)) {
@@ -105,8 +99,7 @@ public final class RouteGenerator {
             MsgFlow sub = pending.getValue();
             traversed.add(id);
             if (!emitted.add(id)) continue;
-            out.append(line(1, "<!-- source: подпоток " + commentText(sub.name()) + " -->"))
-               .append(line(1, "<route id=\"" + xml(id) + "\">"))
+            out.append(line(1, "<route id=\"" + xml(id) + "\">"))
                .append(line(2, "<from uri=\"direct:" + xml(id) + "\"/>"));
             FlowNode input = nodes(sub, "Input").getFirst();
             out.append(branch(2, input, "out", new ArrayList<>(), new LinkedHashSet<>(), referenced, sub));
@@ -119,7 +112,6 @@ public final class RouteGenerator {
                       MsgFlow source) {
         List<FlowConnection> links = connections(source, node.id(), terminal);
         if (links.size() > 1) {
-            // IIB fan-out shares the input message, not mutations from a preceding branch.
             out.append(line(indent, "<multicast stopOnException=\"true\" shareUnitOfWork=\"true\">"));
             for (FlowConnection link : links) {
                 out.append(line(indent + 1, "<pipeline>"));
@@ -147,7 +139,7 @@ public final class RouteGenerator {
                     out.append(line(indent, "<removeProperty name=\"" + success + "\"/>"))
                        .append(snapshot(indent, "capture"))
                        .append(line(indent, "<doTry>"))
-                       .append(step(indent + 1, node, "<to uri=\"bean:" + xml(beanId(node)) + "\"/>"))
+                        .append(line(indent + 1, "<to uri=\"bean:" + xml(beanId(node)) + "\"/>"))
                        .append(setProperty(indent + 1, success, "<constant>true</constant>"));
                     emitCatch(node, "failure", indent + 1, out, raw, visited, referenced, source);
                     out.append(releaseSnapshot(indent + 1)).append(line(indent, "</doTry>"))
@@ -157,7 +149,7 @@ public final class RouteGenerator {
                     out.append(line(indent, "</filter>"))
                        .append(line(indent, "<removeProperty name=\"" + success + "\"/>"));
                 } else {
-                    out.append(step(indent, node, "<to uri=\"bean:" + xml(beanId(node)) + "\"/>"));
+                    out.append(line(indent, "<to uri=\"bean:" + xml(beanId(node)) + "\"/>"));
                     walk(node, "out", indent, out, raw, visited, referenced, source);
                 }
             }
@@ -169,14 +161,14 @@ public final class RouteGenerator {
                     out.append(unsupported(indent, node, reason));
                 } else {
                     raw.add(new Diagnosis(node.id(), node.kind(), UnitStatus.CONVERTED, "MapStruct bean:" + bean));
-                    out.append(step(indent, node, "<to uri=\"bean:" + xml(bean) + "\"/>"));
+                    out.append(line(indent, "<to uri=\"bean:" + xml(bean) + "\"/>"));
                 }
                 walk(node, "out", indent, out, raw, visited, referenced, source);
             }
             case "Route" -> emitRouting(node, indent, out, raw, visited, referenced, source);
             case "MQOutput" -> {
                 diagnoseQueue(node, raw);
-                out.append(step(indent, node, "<to uri=\"jms:" + xml(queue(node)) + "\"/>"));
+                out.append(line(indent, "<to uri=\"jms:" + xml(queue(node)) + "\"/>"));
                 walk(node, "out", indent, out, raw, visited, referenced, source);
             }
             case "Input" -> {
@@ -213,7 +205,7 @@ public final class RouteGenerator {
                 "подпоток \"" + sub.name() + "\" → direct:" + key));
         referenced.putIfAbsent(key, sub);
         out.append(line(indent, "<removeProperty name=\"" + completion(sub) + "\"/>"))
-           .append(step(indent, node, "<to uri=\"direct:" + xml(key) + "\"/>"))
+            .append(line(indent, "<to uri=\"direct:" + xml(key) + "\"/>"))
            .append(line(indent, "<filter>"))
            .append(line(indent + 1, exchangeProperty(completion(sub))));
         StringBuilder continuation = branch(indent + 1, node, "out", raw, visited, referenced, source);
@@ -239,12 +231,11 @@ public final class RouteGenerator {
             }
         } catch (IllegalArgumentException e) {
             raw.add(new Diagnosis(route.id(), route.kind(), UnitStatus.NOT_SUPPORTED, e.getMessage()));
-            out.append(line(indent, commentFor(route))).append(unsupported(indent, route, e.getMessage()));
+            out.append(unsupported(indent, route, e.getMessage()));
             return;
         }
         raw.add(new Diagnosis(route.id(), route.kind(), UnitStatus.CONVERTED,
                 route.routeRules().size() + " правил → XPath; distributionMode=" + mode));
-        out.append(line(indent, commentFor(route)));
         if (connected(source, route, "Failure")) {
             emitRouteWithFailure(route, predicates, mode, indent, out, raw, visited, referenced, source);
         } else {
@@ -636,10 +627,6 @@ public final class RouteGenerator {
         return "<xpath>" + xml(predicate) + "</xpath>";
     }
 
-    private static String step(int indent, FlowNode node, String element) {
-        return line(indent, commentFor(node)) + line(indent, element);
-    }
-
     private static String unsupported(int indent, FlowNode node, String reason) {
         return line(indent, "<throwException exceptionType=\"java.lang.UnsupportedOperationException\" message=\""
                 + xml("Unsupported IIB " + node.kind() + " " + node.id() + ": " + reason) + "\"/>");
@@ -657,19 +644,9 @@ public final class RouteGenerator {
         return SubflowResolver.name(flowName);
     }
 
-    private static String commentFor(FlowNode node) {
-        return "<!-- source: узел " + commentText(node.id()) + " (" + commentText(node.kind()) + ") -->";
-    }
-
     private static String xml(String value) {
         return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                 .replace("\"", "&quot;").replace("'", "&apos;");
-    }
-
-    private static String commentText(String value) {
-        String escaped = xml(value);
-        while (escaped.contains("--")) escaped = escaped.replace("--", "- -");
-        return escaped;
     }
 
     private static String line(int indent, String text) {

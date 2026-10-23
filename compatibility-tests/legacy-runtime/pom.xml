@@ -1,19 +1,25 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
     <modelVersion>4.0.0</modelVersion>
+
     <parent>
         <groupId>ru.petrovov.iib_camel</groupId>
         <artifactId>iib-camel-compatibility-parent</artifactId>
         <version>0.0.1-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
+
     <artifactId>iib-camel-legacy-runtime-tests</artifactId>
+
     <name>Legacy converter compatibility tests</name>
     <description>Legacy execution environment retained for converter regression checks</description>
+
     <properties>
         <camel.version>4.22.0</camel.version>
         <ibm-mq.version>9.4.5.1</ibm-mq.version>
     </properties>
+
     <dependencyManagement>
         <dependencies>
             <dependency>
@@ -32,6 +38,7 @@
             </dependency>
         </dependencies>
     </dependencyManagement>
+
     <dependencies>
         <dependency>
             <groupId>org.mapstruct</groupId>
@@ -44,6 +51,7 @@
             <version>1.6.3</version>
             <scope>test</scope>
         </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter</artifactId>
@@ -64,6 +72,7 @@
             <groupId>org.apache.camel.springboot</groupId>
             <artifactId>camel-jms-starter</artifactId>
         </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-artemis</artifactId>
@@ -77,15 +86,18 @@
             <groupId>org.messaginghub</groupId>
             <artifactId>pooled-jms</artifactId>
         </dependency>
+
         <dependency>
             <groupId>com.fasterxml.jackson.dataformat</groupId>
             <artifactId>jackson-dataformat-xml</artifactId>
         </dependency>
+
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
             <optional>true</optional>
         </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
@@ -97,19 +109,21 @@
             <version>${project.version}</version>
             <scope>test</scope>
         </dependency>
+
         <dependency>
             <groupId>org.apache.activemq</groupId>
             <artifactId>artemis-jakarta-server</artifactId>
             <scope>compile</scope>
         </dependency>
     </dependencies>
+
     <build>
         <resources>
             <resource>
                 <directory>src/main/resources</directory>
             </resource>
             <resource>
-                <directory>${project.basedir}/..</directory>
+                <directory>${project.basedir}/../..</directory>
                 <targetPath>META-INF</targetPath>
                 <includes>
                     <include>LICENSE</include>

@@ -2,11 +2,7 @@ package ru.petrovov.iib_camel.runtime.compute;
 
 import org.apache.camel.Exchange;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 public final class MessageSnapshots {
     private static final String KEY = MessageSnapshots.class.getName() + ".stack";
@@ -15,7 +11,7 @@ public final class MessageSnapshots {
         var stack = new ArrayList<>(stack(exchange));
         stack.add(new Snapshot(exchange.getIn().getBody(),
                 Collections.unmodifiableMap(new LinkedHashMap<>(exchange.getIn().getHeaders()))));
-        // An immutable stack keeps copied exchanges independent during fan-out.
+
         exchange.setProperty(KEY, List.copyOf(stack));
     }
 

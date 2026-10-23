@@ -1,11 +1,9 @@
 package ru.petrovov.iib_camel.converter.cli;
 
-import ru.petrovov.iib_camel.converter.diagram.AnalysisMarkdownRenderer;
-import ru.petrovov.iib_camel.converter.diagram.AsciiDocDiagramRenderer;
-import ru.petrovov.iib_camel.converter.diagram.DiagramNames;
-import ru.petrovov.iib_camel.converter.diagram.MermaidDiagramRenderer;
-import ru.petrovov.iib_camel.converter.diagram.NodeCategoryRegistry;
-import ru.petrovov.iib_camel.converter.diagram.Orientation;
+import picocli.CommandLine.Command;
+import picocli.CommandLine.ITypeConverter;
+import picocli.CommandLine.Option;
+import ru.petrovov.iib_camel.converter.diagram.*;
 import ru.petrovov.iib_camel.converter.esql.EsqlInventoryRenderer;
 import ru.petrovov.iib_camel.converter.esql.EsqlModule;
 import ru.petrovov.iib_camel.converter.esql.EsqlParser;
@@ -14,25 +12,13 @@ import ru.petrovov.iib_camel.converter.msgflow.MsgFlowParser;
 import ru.petrovov.iib_camel.converter.project.MappingProject;
 import ru.petrovov.iib_camel.converter.project.ProjectValidation;
 import ru.petrovov.iib_camel.converter.report.UnitStatus;
-import picocli.CommandLine;
-import picocli.CommandLine.Command;
-import picocli.CommandLine.ITypeConverter;
-import picocli.CommandLine.Option;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.LinkedHashMap;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.Callable;
 import java.util.stream.Stream;
 
@@ -110,7 +96,7 @@ public final class AnalyzeCommand implements Callable<Integer> {
 
         List<Path> files = collectFlowFiles();
         if (files == null) {
-            return 1; // одиночный файл неподдерживаемого расширения
+            return 1;
         }
         List<Path> esqlFiles = collectEsqlFiles();
         if (files.isEmpty() && esqlFiles.isEmpty()) {

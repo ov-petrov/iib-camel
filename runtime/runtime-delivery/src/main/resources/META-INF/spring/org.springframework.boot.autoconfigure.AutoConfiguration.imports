@@ -1,1 +1,2 @@
-ru.petrovov.iib_camel.runtime.delivery.RuntimeDeliveryAutoConfiguration
+ru.petrovov.iib_camel.runtime.delivery.config.DeliveryLiquibaseAutoConfiguration
+ru.petrovov.iib_camel.runtime.delivery.config.RuntimeDeliveryAutoConfiguration

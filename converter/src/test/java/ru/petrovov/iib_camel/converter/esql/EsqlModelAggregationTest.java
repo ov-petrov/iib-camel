@@ -1,13 +1,11 @@
 package ru.petrovov.iib_camel.converter.esql;
 
-import ru.petrovov.iib_camel.converter.report.UnitStatus;
 import org.junit.jupiter.api.Test;
+import ru.petrovov.iib_camel.converter.report.UnitStatus;
 
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 class EsqlModelAggregationTest {
 
@@ -26,7 +24,7 @@ class EsqlModelAggregationTest {
     }
 
     @Test
-    void mergesRepeatedFullPathsAndRetainsEachSourceReference() {
+    void mergesRepeatedFullPathsWithoutSourceComments() {
         var models = generator.generateModels(List.of(
                 statement("SET OutputRoot.XMLNSC.Order.Status = 'OPEN';", "Order.Status"),
                 statement("SET OutputRoot.XMLNSC.Order.Status = 'CLOSED';", "Order.Status")));
@@ -34,8 +32,9 @@ class EsqlModelAggregationTest {
         assertEquals(1, models.size());
         String java = models.getFirst().java();
         assertEquals(1, occurrences(java, "private String status;"));
-        assertTrue(java.contains("SET OutputRoot.XMLNSC.Order.Status = 'OPEN';"));
-        assertTrue(java.contains("SET OutputRoot.XMLNSC.Order.Status = 'CLOSED';"));
+        assertFalse(java.contains("//"));
+        assertFalse(java.contains("/*"));
+        assertFalse(java.contains("SET OutputRoot"));
     }
 
     @Test

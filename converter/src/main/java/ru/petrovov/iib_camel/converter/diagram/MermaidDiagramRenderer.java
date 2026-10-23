@@ -4,15 +4,8 @@ import ru.petrovov.iib_camel.converter.msgflow.FlowConnection;
 import ru.petrovov.iib_camel.converter.msgflow.FlowNode;
 import ru.petrovov.iib_camel.converter.msgflow.MsgFlow;
 
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
-/** Детерминированная Mermaid-схема; правила терминалов — docs/diagram-renderer-design.ru.md, D-5. */
 public final class MermaidDiagramRenderer {
 
     private static final Map<NodeCategory, String> CLASS_DEFS = buildClassDefs();
@@ -71,7 +64,6 @@ public final class MermaidDiagramRenderer {
     }
 
     private String nodeShape(FlowNode node) {
-        // Кавычки защищают текст от разбора как синтаксиса Mermaid, включая (subflow).
         String label = "\"" + labelOf(node) + "\"";
         NodeCategory category = categoryOf(node);
         return category == NodeCategory.REFERENCE

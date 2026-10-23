@@ -49,9 +49,6 @@ public final class EsqlToJavaGenerator {
 
         var java = new StringBuilder();
         java.append("package ").append(GENERATED_PACKAGE).append(";\n\n")
-            .append("// Источник: esql://routine/")
-            .append(module.schema().isBlank() ? "<schema>" : module.schema())
-            .append('#').append(module.name()).append(".Main\n\n")
             .append("import ru.petrovov.iib_camel.runtime.compute.AbstractComputeBean;\n")
             .append("import org.apache.camel.Exchange;\n")
             .append("import org.springframework.stereotype.Component;\n\n")
@@ -59,14 +56,10 @@ public final class EsqlToJavaGenerator {
             .append("public class ").append(className).append(" extends AbstractComputeBean {\n\n")
             .append("    @Override\n")
             .append("    protected void main(Exchange exchange) {\n");
-        for (EsqlTranslator.StatementTranslation statement : translation.statements()) {
-            appendComment(java, statement.esql(), "", "        ");
-            if (complete) {
+        if (complete) {
+            for (EsqlTranslator.StatementTranslation statement : translation.statements()) {
                 statement.java().lines().forEach(line -> java.append("        ").append(line).append('\n'));
             }
-        }
-        for (String issue : moduleIssues) {
-            appendComment(java, issue, "TODO (FR-3.3): ", "        ");
         }
         if (!complete) {
             java.append("        throw new UnsupportedOperationException(\"ESQL module ")
@@ -77,36 +70,29 @@ public final class EsqlToJavaGenerator {
                 generateModels(translator.modelStatements()), complete, List.copyOf(moduleIssues));
     }
 
-    private static void appendComment(StringBuilder java, String source, String prefix, String indent) {
-        for (String line : source.split("\\R", -1)) {
-            java.append(indent).append("// ").append(prefix).append(line.replace("\\", "\\\\")).append('\n');
-        }
-    }
-
     public List<ModelResult> generateModels(List<EsqlTranslator.StatementTranslation> statements) {
         Map<String, ModelAccumulator> models = new LinkedHashMap<>();
         for (EsqlTranslator.StatementTranslation statement : statements) {
             Matcher matcher = SET_BODY_FIELD.matcher(statement.java());
             while (matcher.find()) {
-            String path = matcher.group(1);
-            String[] segments = path.split("\\.");
-            String root = segments[0];
-            String leafName = JavaNames.propertyName(segments[segments.length - 1]);
-            String className = pascalize(root);
-            ModelAccumulator model = models.computeIfAbsent(className, k -> new ModelAccumulator(root));
-            if (!model.root.equals(root)) {
-                throw new IllegalArgumentException("разные корни ESQL " + model.root + " и " + root
+                String path = matcher.group(1);
+                String[] segments = path.split("\\.");
+                String root = segments[0];
+                String leafName = JavaNames.propertyName(segments[segments.length - 1]);
+                String className = pascalize(root);
+                ModelAccumulator model = models.computeIfAbsent(className, k -> new ModelAccumulator(root));
+                if (!model.root.equals(root)) {
+                    throw new IllegalArgumentException("разные корни ESQL " + model.root + " и " + root
                         + " нормализуются в одну модель " + className);
-            }
-            AggregatedField field = model.fields.get(leafName);
-            if (field == null) {
-                field = new AggregatedField(path);
-                model.fields.put(leafName, field);
-            } else if (!field.path.equals(path)) {
-                throw new IllegalArgumentException("пути ESQL " + field.path + " и " + path
+                }
+                AggregatedField field = model.fields.get(leafName);
+                if (field == null) {
+                    field = new AggregatedField(path);
+                    model.fields.put(leafName, field);
+                } else if (!field.path.equals(path)) {
+                    throw new IllegalArgumentException("пути ESQL " + field.path + " и " + path
                         + " сворачиваются в поле " + className + "." + leafName);
-            }
-            field.sources.add(statement.esql());
+                }
             }
         }
         List<ModelResult> result = new ArrayList<>();
@@ -114,12 +100,8 @@ public final class EsqlToJavaGenerator {
             String className = entry.getKey();
             var java = new StringBuilder();
             java.append("package ").append(GENERATED_MODEL_PACKAGE).append(";\n\n")
-                .append("// Модель из ESQL-путей; типы String (FR-3.4).\n")
                 .append("public class ").append(className).append(" {\n\n");
             for (var field : entry.getValue().fields.entrySet()) {
-                for (String source : field.getValue().sources) {
-                    appendComment(java, source, "", "    ");
-                }
                 java.append("    private String ").append(field.getKey()).append(";\n\n")
                     .append("    public String ").append(JavaNames.getterName(field.getKey())).append("() {\n")
                     .append("        return ").append(field.getKey()).append(";\n")
@@ -146,7 +128,6 @@ public final class EsqlToJavaGenerator {
 
     private static final class AggregatedField {
         private final String path;
-        private final List<String> sources = new ArrayList<>();
 
         private AggregatedField(String path) {
             this.path = path;

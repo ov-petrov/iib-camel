@@ -5,4 +5,3 @@ CREATE COMPUTE MODULE Broken
     SET OutputRoot = InputRoot;
     IF InputRoot.XMLNSC.Order.Status = 'HOLD' THEN
       SET OutputRoot.XMLNSC.Order.Status = 'REVIEW';
-    -- пропущены END IF, END и END MODULE

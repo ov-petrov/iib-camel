@@ -1,35 +1,35 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <routes xmlns="http://camel.apache.org/schema/spring">
-  <!-- source: узел Input (MQInput) -->
-  <route id="Order">
+
+    <route id="Order">
     <from uri="jms:ORDERS.IN?transacted=true&amp;disableReplyTo=true"/>
     <bean beanType="ru.petrovov.iib_camel.runtime.compute.MessageSnapshots" method="capture"/>
     <doTry>
       <removeProperty name="iib_complete_436865636b2e737562666c6f77"/>
-      <!-- source: узел CheckRef (Subflow) -->
-      <to uri="direct:Check"/>
+
+        <to uri="direct:Check"/>
       <filter>
         <exchangeProperty>iib_complete_436865636b2e737562666c6f77</exchangeProperty>
-        <!-- source: узел Acked (MQOutput) -->
-        <to uri="jms:ORDERS.OUT"/>
+
+          <to uri="jms:ORDERS.OUT"/>
       </filter>
       <removeProperty name="iib_complete_436865636b2e737562666c6f77"/>
       <doCatch>
         <exception>java.lang.Exception</exception>
         <bean beanType="ru.petrovov.iib_camel.runtime.compute.MessageSnapshots" method="restore"/>
-        <!-- source: узел Rejected (MQOutput) -->
-        <to uri="jms:ORDERS.ERROR.Q"/>
+
+          <to uri="jms:ORDERS.ERROR.Q"/>
       </doCatch>
       <doFinally>
         <bean beanType="ru.petrovov.iib_camel.runtime.compute.MessageSnapshots" method="release"/>
       </doFinally>
     </doTry>
   </route>
-  <!-- source: подпоток Check.subflow -->
-  <route id="Check">
+
+    <route id="Check">
     <from uri="direct:Check"/>
-    <!-- source: узел CheckStep (Compute) -->
-    <to uri="bean:checkCompute1"/>
+
+        <to uri="bean:checkCompute1"/>
     <throwException exceptionType="java.lang.UnsupportedOperationException" message="Unsupported IIB Trace TraceNode: правило конвертации не определено"/>
     <setProperty name="iib_complete_436865636b2e737562666c6f77">
       <constant>true</constant>

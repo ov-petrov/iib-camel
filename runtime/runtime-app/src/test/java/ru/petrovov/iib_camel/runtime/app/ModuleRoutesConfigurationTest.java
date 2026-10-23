@@ -1,11 +1,14 @@
 package ru.petrovov.iib_camel.runtime.app;
 
-import java.util.HashSet;
 import org.junit.jupiter.api.Test;
-import static org.junit.jupiter.api.Assertions.*;
+
+import java.util.HashSet;
+
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ModuleRoutesConfigurationTest {
-    @Test void moduleNamespacesPreventAccidentalRouteReplacement() throws Exception {
+    @Test
+    void moduleNamespacesPreventAccidentalRouteReplacement() throws Exception {
         var registered = new HashSet<String>();
         ModuleRoutesConfiguration.validateRouteIds("one", xml("one.receive"), registered);
         ModuleRoutesConfiguration.validateRouteIds("two", xml("two.receive"), registered);

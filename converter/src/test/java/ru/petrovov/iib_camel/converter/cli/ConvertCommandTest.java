@@ -12,8 +12,7 @@ import java.nio.file.Paths;
 import java.util.Comparator;
 import java.util.stream.Stream;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 class ConvertCommandTest {
 
@@ -137,8 +136,13 @@ class ConvertCommandTest {
         assertTrue(report.contains("POJO-модели тела (FR-3.4, первый уровень) для `Adjust_Compute1`"),
                 "модели перечислены в отчёте");
         assertTrue(report.contains("`models/Order.java`"), "файл модели виден в отчёте");
-        assertTrue(goldenBean.contains("IF InputBody.Order.Status = 'HOLD'"),
-                "непереводимое ветвление видно в бине (golden-сравнение бина выше)");
+        assertTrue(report.contains("IF InputBody.Order.Status = 'HOLD'"));
+        assertTrue(goldenBean.contains("throw new UnsupportedOperationException"));
+        assertFalse(goldenBean.contains("//"));
+        assertFalse(goldenBean.contains("/*"));
+        assertFalse(goldenModel.contains("//"));
+        assertFalse(goldenModel.contains("/*"));
+        assertFalse(golden.contains("<!--"));
         assertTrue(report.contains("Требуют внимания: 2 из 5 единиц"),
                 "ветвление блокирует модуль и использующий его Compute");
     }

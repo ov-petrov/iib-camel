@@ -7,7 +7,8 @@ import org.springframework.jms.connection.JmsTransactionManager;
 import org.springframework.jms.core.JmsTemplate;
 
 final class JmsTransportSupport {
-    private JmsTransportSupport() { }
+    private JmsTransportSupport() {
+    }
 
     static JmsPoolConnectionFactory pool(ConnectionFactory factory, JmsTransportProperties properties) {
         var pool = new JmsPoolConnectionFactory();
@@ -21,7 +22,9 @@ final class JmsTransportSupport {
     static JmsTemplate template(ConnectionFactory factory) {
         var template = new JmsTemplate(factory);
         template.setDestinationResolver((session, name, pubSub) -> {
-            if (name.startsWith("topic:")) return session.createTopic(name.substring(6));
+            if (name.startsWith("topic:")) {
+                return session.createTopic(name.substring(6));
+            }
             return session.createQueue(name.startsWith("queue:") ? name.substring(6) : name);
         });
         template.setSessionTransacted(true);

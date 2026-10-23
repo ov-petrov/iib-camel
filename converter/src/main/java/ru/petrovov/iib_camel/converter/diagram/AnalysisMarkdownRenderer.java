@@ -11,22 +11,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-/**
- * Рендерер инвентаризационного отчёта «как есть» (Markdown, .md) — формирует команда
- * {@code analyze}. Это отчёт ТОЛЬКО о текущей системе, до миграции: он не содержит
- * статусов конвертации и артефактов целевого вида (маршрут, бины) — это подчёркивает
- * границу с полным отчётом команды convert (FR-5.1).
- *
- * Состав документа:
- *   - «Топология» — блок ```mermaid``` со встроенной схемой (GitHub/IDEA рендерятся);
- *   - «Узлы» — таблица: узел, тип, категория IIB, ключевое свойство, есть ли правило
- *     конвертации (сверка с RouteGenerator.SUPPORTED_BASE_KINDS);
- *   - «Связи» — таблица терминалов;
- *   - «Готовность к миграции» — вердикт: предусмотрена ли обработка всех узлов/сущностей
- *     IIB, и какие типы требуют ручной миграции или расширения правил (FR-2.2, Should).
- *
- * Детерминированный (D-3/D-4): обход только по упорядоченным коллекциям IR.
- */
 public final class AnalysisMarkdownRenderer {
 
     private final MermaidDiagramRenderer mermaid;
@@ -41,12 +25,10 @@ public final class AnalysisMarkdownRenderer {
         this.registry = registry;
     }
 
-    /** Отчёт без атрибута источника (используется в тестах). */
     public String render(MsgFlow flow, Orientation orientation) {
         return build(flow, orientation, null);
     }
 
-    /** Отчёт со ссылкой на исходный файл (путь подаёт CLI — IR его не хранит). */
     public String render(MsgFlow flow, Orientation orientation, String sourceFile) {
         return build(flow, orientation, sourceFile);
     }
@@ -107,7 +89,6 @@ public final class AnalysisMarkdownRenderer {
         return out.toString();
     }
 
-    /** Вердикт: обработка всех узлов предусмотрена или нет, какие сущности вне покрытия. */
     private void verdict(MsgFlow flow, StringBuilder out) {
         List<FlowNode> nodes = flow.nodes();
         long handled = nodes.stream()
@@ -166,7 +147,6 @@ public final class AnalysisMarkdownRenderer {
         return DiagramNames.of(flow.name(), "flow");
     }
 
-    /** Самое содержательное свойство узла (A5): очередь либо ESQL-модуль. */
     private static String captionOf(Map<String, String> properties) {
         String queue = properties.get("queueName");
         if (queue != null && !queue.isBlank()) {

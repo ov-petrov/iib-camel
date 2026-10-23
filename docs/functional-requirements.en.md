@@ -137,10 +137,10 @@ Each capability requires separate synthetic scenarios and behavior checks. Confi
   parent route. The method is selected by configuration (default — `direct:` route).
 - **FR-2.5. (Must)** Generated XML shall be valid and loadable into the Camel context of the runtime
   service without manual syntax fixes.
-- **FR-2.6. (Should)** Every generated route/step shall contain a comment indicating the source: flow name,
-  node name, line of the source file (traceability).
+- **FR-2.6. (Should)** The report shall trace each generated route/step to its source: flow name, node,
+  and source file line when available. No comments are added to generated code.
 - **FR-2.7. (Should)** Nodes without a defined conversion rule are not discarded: the system shall mark
-  such nodes in the report (FR-5) and generate a stub with a TODO comment.
+  such nodes in the report (FR-5) and generate a stub that explicitly blocks unsupported behavior.
 
 ### 3.3. ESQL translation
 
@@ -155,7 +155,7 @@ Each capability requires separate synthetic scenarios and behavior checks. Confi
   - accesses to the message tree (`InputRoot`, `OutputRoot`, `Environment`, `LocalEnvironment`,
     `Properties`, `MQMD`) into Camel body/header operations or calls to intermediary ULM POJO models.
 - **FR-3.3. (Should)** Expressions impossible to auto-translate shall:
-  - either be translated partially, leaving a `TODO` stub comment and a reference to the source line;
+  - either be translated partially, blocking incomplete fragments and referencing the source line in the report;
   - or be marked in the report as requiring manual development.
 - **FR-3.4. (Should)** The system shall generate intermediary POJO classes (ULM model: message body,
   headers, Environment/LocalEnvironment) to be used in processors and mappers — based on the analyzed
@@ -186,6 +186,10 @@ Implementation update after blocker fixes (2026-10-22): incomplete ESQL beans fa
 
 B1 implementation update (2026-10-22): canonical single-entry/single-exit subflows are emitted once per batch, including nested references. Graph generation preserves fan-out and MQOutput continuation; cycles and unknown terminals are diagnosed. Input.catch and local Compute/Route.failure chains restore their input message. MQInput.failure and multiple subflow propagations remain unsupported. Output files use manifest ownership and collision/path checks.
 
+Update on 2026-10-23: generated Java and XML no longer contain source statements, references or TODOs in comments.
+Reports retain diagnostics and source ESQL fragments; incomplete modules still fail before business operations. The
+implementation status dated 2026-10-22 above is historical.
+
 ### 3.4. MapStruct mapper generation
 
 - **FR-4.1. (Must/Should)** By the logic of Mapping nodes (message transformation flows), the system shall
@@ -201,7 +205,7 @@ B1 implementation update (2026-10-22): canonical single-entry/single-exit subflo
   "input object → output object" (copy/transformation of the Body structure):
   - simple copy — via auto-generation of a mapper method (source-target by field/sub-tree name);
   - complex operations — a Java class (`@Mapper` + auxiliary `@Named` methods)
-    with stub comments referencing ESQL lines.
+    with diagnostics and references to the source ESQL fragments in the report.
 - **FR-4.3. (Must)** The system shall generate mappers marked for Spring
   (`@Mapper(componentModel = MappingConstants.ComponentModel.SPRING)`), so they embed into the Spring
   context of the runtime service.

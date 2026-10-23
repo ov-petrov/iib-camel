@@ -1,12 +1,18 @@
 package ru.petrovov.iib_camel.converter.mapping;
 
-import ru.petrovov.iib_camel.converter.java.JavaNames;
 import org.w3c.dom.Element;
-import ru.petrovov.iib_camel.converter.schema.*;
+import ru.petrovov.iib_camel.converter.java.JavaNames;
+import ru.petrovov.iib_camel.converter.schema.SchemaDiagnostic;
+import ru.petrovov.iib_camel.converter.schema.SchemaModel;
+import ru.petrovov.iib_camel.converter.schema.SchemaRegistry;
+import ru.petrovov.iib_camel.converter.schema.SchemaXml;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 public final class GraphicalMapParser {
@@ -93,7 +99,6 @@ public final class GraphicalMapParser {
         String value = endpoint.getAttribute("path");
         require(!value.isBlank() && !value.contains(":") && !value.contains("?"), "Only local XSD schema paths supported: " + value);
         require(value.endsWith(".xsd"), "XMLNSC mapping requires XSD schemas");
-        // Toolkit's /Schema.xsd references are relative to the integration project.
         Path path = source.getParent().resolve(value.startsWith("/") ? value.substring(1) : value).normalize();
         require(path.startsWith(source.getParent()) && Files.isRegularFile(path), "Missing or escaping schema path: " + value);
         require(path.toRealPath().startsWith(source.getParent().toRealPath()), "Schema symlink escapes integration project");

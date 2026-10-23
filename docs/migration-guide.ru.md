@@ -117,7 +117,7 @@ java -jar converter/target/converter.jar \
   в отчёте convert.
 
 > Если в вердикте «нет» — часть типов узлов потока вне базового набора правил
-> (FR-2.2): такие узлы конвертер заменит заглушкой с TODO-комментарием либо их
+> (FR-2.2): такие узлы конвертер заменит заглушкой и диагностикой в отчёте либо их
 > придётся мигрировать вручную (FR-2.7). Это видно до конвертации.
 
 Пакетная обработка каталога — та же команда с `--input <каталог>` вместо файла.
@@ -168,27 +168,21 @@ converted/
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <routes xmlns="http://camel.apache.org/schema/spring">
-  <!-- source: узел Input (MQInput) -->
   <route id="Adapter">
     <from uri="jms:ADAPTER.IN"/>
     <doTry>
-      <!-- source: узел Enrich (Compute) -->
       <to uri="bean:adapterCompute1"/>
-      <!-- source: узел RouteByStatus (Route) -->
       <choice>
         <when>
           <xpath>/Adapter/Order/status='HIGH'</xpath>
-          <!-- source: узел PriorityQueue (MQOutput) -->
           <to uri="jms:ADAPTER.PRIORITY.Q"/>
         </when>
         <otherwise>
-          <!-- source: узел DefaultQueue (MQOutput) -->
           <to uri="jms:ADAPTER.DEFAULT.Q"/>
         </otherwise>
       </choice>
       <doCatch>
         <exception>java.lang.Exception</exception>
-        <!-- source: узел ErrorQueue (MQOutput) -->
         <to uri="jms:ADAPTER.ERROR.Q"/>
       </doCatch>
     </doTry>
@@ -196,8 +190,8 @@ converted/
 </routes>
 ```
 
-Каждый шаг снабжён комментарием `<!-- source: … -->` — это трассируемость
-до исходного узла IIB (FR-2.6).
+Связь с исходными узлами IIB и причины ручной миграции сохраняются в отчёте (FR-2.6).
+Сгенерированные Java и XML не содержат поясняющих комментариев.
 
 **Пример корректного вывода команды:**
 

@@ -45,7 +45,6 @@ final class IibXPath {
                 } else if (!variable.equals("$Body")) {
                     throw new IllegalArgumentException("неподдерживаемая переменная XPath: " + variable);
                 }
-                // IIB's parser-domain node corresponds to the serialized XML document node.
                 if (end == pattern.length() || pattern.charAt(end) != '/') {
                     translated.append('/');
                 }

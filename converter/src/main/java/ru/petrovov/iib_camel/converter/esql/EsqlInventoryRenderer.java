@@ -67,7 +67,7 @@ public final class EsqlInventoryRenderer {
                 .append(counts.full).append(", частично ").append(counts.partial)
                 .append(", вне подмножества ").append(counts.outliers).append(".\n\n")
                 .append("Пути продвижения:\n")
-                .append("- вне подмножества — ручная доработка после генерации (FR-3.3: TODO-заглушки в бинах)\n")
+            .append("- вне подмножества — ручная доработка после генерации (FR-3.3: неполные бины блокируют исполнение)\n")
                 .append("  или расширение правил переводчика (FR-3.2, Should);\n")
                 .append("- сколько операторов и из-за чего не переведено — покажет отчёт `convert`\n")
                 .append("  (пооператорная детализация FR-5.2).\n");

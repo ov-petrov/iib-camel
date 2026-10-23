@@ -5,30 +5,14 @@ import ru.petrovov.iib_camel.converter.msgflow.FlowNode;
 import ru.petrovov.iib_camel.converter.msgflow.MsgFlow;
 
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
-/**
- * Рендерер IR → AsciiDoc-документ (.adoc)
- * (docs/diagram-renderer-design.ru.md, раздел 4.4/4.5, формат adoc).
- *
- * Состав документа: заголовок (= имя потока), атрибут :source-file:, отсылка к графической
- * схеме (.mmd рядом, сборщик рендерит через GitHub/asciidoctor-mechanism), таблицы узлов
- * и связей. Детерминированный (D-3/D-4): узлы/связи в порядке объявления IR, без времени
- * и случайностей.
- *
- * Историческая заметка: раньше документ содержал «дерево-конспект» (ASCII-схему) в
- * листинг-блоке; ASCII-формат удалён — топология живёт в Mermaid (.mmd и встроенный
- * блок в отчёте .md команды analyze).
- */
 public final class AsciiDocDiagramRenderer {
 
-    /** Готовит документ .adoc по потоку (без атрибута источника). */
     public String render(MsgFlow flow) {
         return build(flow, null);
     }
 
-    /** Готовит документ .adoc с атрибутом :source-file: (путь подаёт CLI — IR его не хранит). */
     public String render(MsgFlow flow, String sourceFile) {
         return build(flow, sourceFile);
     }
@@ -37,8 +21,7 @@ public final class AsciiDocDiagramRenderer {
         StringBuilder out = new StringBuilder();
         String title = DiagramNames.of(flow.name(), "flow");
 
-        out.append("// Сгенерировано конвертером iib-camel (analyze --format adoc).\n")
-           .append("= ").append(title).append("\n");
+        out.append("= ").append(title).append("\n");
         if (sourceFile != null && !sourceFile.isBlank()) {
             out.append(":source-file: ").append(sourceFile).append("\n");
         }
@@ -94,7 +77,6 @@ public final class AsciiDocDiagramRenderer {
         return node.label().isBlank() ? node.id() : node.label();
     }
 
-    /** Самое содержательное свойство (A5): очередь либо ESQL-модуль. */
     private static String captionOf(Map<String, String> properties) {
         String queue = properties.get("queueName");
         if (queue != null && !queue.isBlank()) {
@@ -107,10 +89,6 @@ public final class AsciiDocDiagramRenderer {
         return null;
     }
 
-    /**
-     * Экранирование для текста ячейки таблицы AsciiDoc: вертикальная черта — разделитель
-     * ячеек, поэтому её удобно заэскейпить конвертацией в сущность HTML.
-     */
     private static String escapeCell(String text) {
         if (text == null) {
             return "";

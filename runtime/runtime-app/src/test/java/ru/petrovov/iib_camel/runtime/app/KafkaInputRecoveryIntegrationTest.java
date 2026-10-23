@@ -1,16 +1,5 @@
 package ru.petrovov.iib_camel.runtime.app;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doAnswer;
-
-import java.time.Duration;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.camel.CamelContext;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.NewTopic;
@@ -32,9 +21,22 @@ import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
-import ru.petrovov.iib_camel.runtime.delivery.InboxService;
-import ru.petrovov.iib_camel.runtime.delivery.MessageHandler;
+import ru.petrovov.iib_camel.runtime.delivery.handler.MessageHandler;
+import ru.petrovov.iib_camel.runtime.delivery.inbox.InboxService;
+import ru.petrovov.iib_camel.runtime.delivery.outbox.OutboxStatus;
 import ru.petrovov.iib_camel.runtime.message.InboundMessage;
+
+import java.time.Duration;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 
 @EnabledIfEnvironmentVariable(named = "IIB_TEST_POSTGRES_URL", matches = ".+")
 @EnabledIfEnvironmentVariable(named = "IIB_TEST_KAFKA_BOOTSTRAP_SERVERS", matches = ".+")
@@ -52,22 +54,25 @@ class KafkaInputRecoveryIntegrationTest {
     private static final String SOURCE = "synthetic-recovery-source-" + SUFFIX;
     private static boolean topicCreated;
 
-    @Autowired JdbcTemplate jdbc;
-    @Autowired CamelContext camel;
-    @MockitoSpyBean InboxService inbox;
+    @Autowired
+    JdbcTemplate jdbc;
+
+    @Autowired
+    CamelContext camel;
+
+    @MockitoSpyBean
+    InboxService inbox;
 
     @DynamicPropertySource
     static void settings(DynamicPropertyRegistry properties) throws Exception {
         createInputTopic();
-        properties.add("spring.datasource.url", () -> {
-            String url = System.getenv("IIB_TEST_POSTGRES_URL");
-            return url + (url.contains("?") ? "&" : "?") + "currentSchema=" + SCHEMA;
-        });
+        properties.add("spring.datasource.url", () -> System.getenv("IIB_TEST_POSTGRES_URL"));
         properties.add("spring.datasource.username", KafkaInputRecoveryIntegrationTest::postgresUser);
         properties.add("spring.datasource.password", KafkaInputRecoveryIntegrationTest::postgresPassword);
-        properties.add("spring.flyway.schemas", () -> SCHEMA);
-        properties.add("spring.flyway.default-schema", () -> SCHEMA);
-        properties.add("spring.flyway.create-schemas", () -> "true");
+        properties.add("iib.delivery.schema", () -> SCHEMA);
+        properties.add("iib.delivery.create-schema", () -> "true");
+        properties.add("spring.liquibase.default-schema", () -> SCHEMA);
+        properties.add("spring.liquibase.liquibase-schema", () -> SCHEMA);
         properties.add("iib.transports.kafka.bootstrap-servers", KafkaInputRecoveryIntegrationTest::kafkaBrokers);
         properties.add("iib.modules.example.input-uri", () -> "kafka:" + TOPIC + "?groupId=" + GROUP
                 + "&pollTimeoutMs=100&maxPollIntervalMs=60000");
@@ -101,10 +106,10 @@ class KafkaInputRecoveryIntegrationTest {
                 produce(payload);
                 assertThat(firstFailure.await(10, TimeUnit.SECONDS)).isTrue();
                 assertThat(recoveryStarted.await(10, TimeUnit.SECONDS)).isTrue();
-                // The failed delivery has returned; the retry cannot persist until this assertion completes.
+
                 assertThat(committedOffset(admin, partition)).isNull();
-                assertThat(jdbc.queryForObject("SELECT count(*) FROM runtime_inbox", Integer.class)).isZero();
-                assertThat(jdbc.queryForObject("SELECT count(*) FROM runtime_outbox", Integer.class)).isZero();
+                assertThat(jdbc.queryForObject("SELECT count(*) FROM " + inboxTable(), Integer.class)).isZero();
+                assertThat(jdbc.queryForObject("SELECT count(*) FROM " + outboxTable(), Integer.class)).isZero();
             } finally {
                 allowRecovery.countDown();
             }
@@ -112,18 +117,21 @@ class KafkaInputRecoveryIntegrationTest {
             awaitReadyEvent();
             awaitCommittedOffset(admin, partition, 1);
             assertThat(attempts.get()).isGreaterThanOrEqualTo(2);
-            assertThat(jdbc.queryForObject("SELECT count(*) FROM runtime_inbox", Integer.class)).isEqualTo(1);
-            assertThat(jdbc.queryForObject("SELECT message_id FROM runtime_inbox", String.class)).isEqualTo("0");
-            assertThat(jdbc.queryForObject("SELECT source FROM runtime_inbox", String.class)).isEqualTo(SOURCE + ":" + TOPIC + ":0");
-            assertThat(jdbc.queryForObject("SELECT count(*) FROM runtime_outbox", Integer.class)).isEqualTo(1);
-            assertThat(jdbc.queryForObject("SELECT status FROM runtime_outbox", String.class)).isEqualTo("READY");
-            assertThat(jdbc.queryForObject("SELECT payload FROM runtime_outbox", byte[].class)).containsExactly(payload);
-            assertThat(jdbc.queryForObject("SELECT attempt_count FROM runtime_outbox", Integer.class)).isZero();
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM " + inboxTable(), Integer.class)).isEqualTo(1);
+            assertThat(jdbc.queryForObject("SELECT message_id FROM " + inboxTable(), String.class)).isEqualTo("0");
+            assertThat(jdbc.queryForObject("SELECT source FROM " + inboxTable(), String.class)).isEqualTo(SOURCE + ":" + TOPIC + ":0");
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM " + outboxTable(), Integer.class)).isEqualTo(1);
+            assertThat(jdbc.queryForObject("SELECT status FROM " + outboxTable(), String.class))
+                .isEqualTo(OutboxStatus.READY.getDatabaseValue());
+            assertThat(jdbc.queryForObject("SELECT payload FROM " + outboxTable(), byte[].class)).containsExactly(payload);
+            assertThat(jdbc.queryForObject("SELECT attempt_count FROM " + outboxTable(), Integer.class)).isZero();
         }
     }
 
     private static synchronized void createInputTopic() throws Exception {
-        if (topicCreated) return;
+        if (topicCreated) {
+            return;
+        }
         try (var admin = AdminClient.create(Map.of("bootstrap.servers", kafkaBrokers()))) {
             admin.createTopics(List.of(new NewTopic(TOPIC, 1, (short) 1))).all().get(10, TimeUnit.SECONDS);
             topicCreated = true;
@@ -134,8 +142,10 @@ class KafkaInputRecoveryIntegrationTest {
         var settings = Map.<String, Object>of("bootstrap.servers", kafkaBrokers(), "acks", "all",
                 "enable.idempotence", true, "max.block.ms", 10000, "request.timeout.ms", 10000,
                 "delivery.timeout.ms", 15000);
-        try (var producer = new KafkaProducer<byte[], byte[]>(settings, new ByteArraySerializer(), new ByteArraySerializer())) {
-            var result = producer.send(new ProducerRecord<byte[], byte[]>(TOPIC, 0, null, payload)).get(10, TimeUnit.SECONDS);
+        try (var producer = new KafkaProducer<byte[], byte[]>(
+            settings, new ByteArraySerializer(), new ByteArraySerializer())) {
+            var result = producer.send(new ProducerRecord<byte[], byte[]>(TOPIC, 0, null, payload))
+                .get(10, TimeUnit.SECONDS);
             assertThat(result.offset()).isZero();
         }
     }
@@ -147,8 +157,11 @@ class KafkaInputRecoveryIntegrationTest {
     private void awaitReadyEvent() throws InterruptedException {
         long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
         while (System.nanoTime() < deadline) {
-            Integer ready = jdbc.queryForObject("SELECT count(*) FROM runtime_outbox WHERE status = 'READY'", Integer.class);
-            if (ready != null && ready == 1) return;
+            Integer ready = jdbc.queryForObject("SELECT count(*) FROM " + outboxTable() + " WHERE status = ?",
+                Integer.class, OutboxStatus.READY.getDatabaseValue());
+            if (ready != null && ready == 1) {
+                return;
+            }
             Thread.sleep(100);
         }
         throw new AssertionError("Kafka retry did not commit a READY event within 10 seconds");
@@ -158,7 +171,9 @@ class KafkaInputRecoveryIntegrationTest {
         long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
         while (System.nanoTime() < deadline) {
             OffsetAndMetadata committed = committedOffset(admin, partition);
-            if (committed != null && committed.offset() == expected) return;
+            if (committed != null && committed.offset() == expected) {
+                return;
+            }
             Thread.sleep(100);
         }
         throw new AssertionError("Kafka offset was not committed after database persistence within 10 seconds");
@@ -178,12 +193,29 @@ class KafkaInputRecoveryIntegrationTest {
                 }
             }
         } finally {
-            var dataSource = new DriverManagerDataSource(System.getenv("IIB_TEST_POSTGRES_URL"), postgresUser(), postgresPassword());
+            var dataSource = new DriverManagerDataSource(
+                System.getenv("IIB_TEST_POSTGRES_URL"), postgresUser(), postgresPassword());
             new JdbcTemplate(dataSource).execute("DROP SCHEMA IF EXISTS " + SCHEMA + " CASCADE");
         }
     }
 
-    private static String postgresUser() { return System.getenv().getOrDefault("IIB_TEST_POSTGRES_USER", "postgres"); }
-    private static String postgresPassword() { return System.getenv().getOrDefault("IIB_TEST_POSTGRES_PASSWORD", ""); }
-    private static String kafkaBrokers() { return System.getenv("IIB_TEST_KAFKA_BOOTSTRAP_SERVERS"); }
+    private static String postgresUser() {
+        return System.getenv().getOrDefault("IIB_TEST_POSTGRES_USER", "postgres");
+    }
+
+    private static String postgresPassword() {
+        return System.getenv().getOrDefault("IIB_TEST_POSTGRES_PASSWORD", "");
+    }
+
+    private static String kafkaBrokers() {
+        return System.getenv("IIB_TEST_KAFKA_BOOTSTRAP_SERVERS");
+    }
+
+    private static String inboxTable() {
+        return "\"" + SCHEMA + "\".\"runtime_inbox\"";
+    }
+
+    private static String outboxTable() {
+        return "\"" + SCHEMA + "\".\"runtime_outbox\"";
+    }
 }

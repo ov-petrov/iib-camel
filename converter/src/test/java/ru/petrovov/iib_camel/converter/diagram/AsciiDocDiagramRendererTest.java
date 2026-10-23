@@ -1,19 +1,14 @@
 package ru.petrovov.iib_camel.converter.diagram;
 
+import org.junit.jupiter.api.Test;
 import ru.petrovov.iib_camel.converter.msgflow.FlowNode;
 import ru.petrovov.iib_camel.converter.msgflow.MsgFlow;
-import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
-/**
- * AsciiDoc-документ: IR → .adoc (решение D-8 дизайн-документа).
- */
 class AsciiDocDiagramRendererTest {
 
     private final AsciiDocDiagramRenderer renderer = new AsciiDocDiagramRenderer();
@@ -40,7 +35,8 @@ class AsciiDocDiagramRendererTest {
     void documentStructureIsComplete() {
         String doc = renderer.render(adapterLikeFlow());
 
-        assertTrue(doc.startsWith("// Сгенерировано конвертером iib-camel"));
+        assertTrue(doc.startsWith("= Adapter\n"));
+        assertFalse(doc.contains("//"));
         assertTrue(doc.contains("= Adapter\n"));
         assertTrue(doc.contains("== Схема\n"), "отсылка к .mmd вместо ASCII-дерева");
         assertTrue(doc.contains("Adapter.mmd"));
@@ -62,7 +58,6 @@ class AsciiDocDiagramRendererTest {
 
     @Test
     void missingCaptionShownAsDash() {
-        // Route в adapterLikeFlow() без queueName/computeExpression
         String doc = renderer.render(adapterLikeFlow());
         assertTrue(doc.contains("| RouteByStatus | Route | Route by status | —"));
     }

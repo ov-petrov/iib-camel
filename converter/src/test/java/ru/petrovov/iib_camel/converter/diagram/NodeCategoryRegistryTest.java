@@ -4,9 +4,6 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-/**
- * Реестр категорий: kind → категория (дизайн-документ, раздел 4.2).
- */
 class NodeCategoryRegistryTest {
 
     private final NodeCategoryRegistry registry = NodeCategoryRegistry.withIibDefaults();

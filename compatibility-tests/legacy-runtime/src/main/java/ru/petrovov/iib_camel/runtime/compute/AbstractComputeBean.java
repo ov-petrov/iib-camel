@@ -1,16 +1,5 @@
 package ru.petrovov.iib_camel.runtime.compute;
 
-import java.io.StringReader;
-import java.io.StringWriter;
-import java.util.HashMap;
-import java.util.Map;
-import javax.xml.XMLConstants;
-import javax.xml.parsers.DocumentBuilderFactory;
-import javax.xml.transform.OutputKeys;
-import javax.xml.transform.Transformer;
-import javax.xml.transform.TransformerFactory;
-import javax.xml.transform.dom.DOMSource;
-import javax.xml.transform.stream.StreamResult;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.camel.Exchange;
 import org.apache.camel.Handler;
@@ -20,7 +9,19 @@ import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
 import org.xml.sax.helpers.DefaultHandler;
 
-/** Shared operations for generated Compute beans; XML paths include the document root. */
+import javax.xml.XMLConstants;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.transform.OutputKeys;
+import javax.xml.transform.Transformer;
+import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.dom.DOMSource;
+import javax.xml.transform.stream.StreamResult;
+import java.io.StringReader;
+import java.io.StringWriter;
+import java.util.HashMap;
+import java.util.Map;
+
+
 @Slf4j
 public abstract class AbstractComputeBean {
 
@@ -49,7 +50,7 @@ public abstract class AbstractComputeBean {
 
     protected abstract void main(Exchange exchange);
 
-    /** Restores this invocation's input; mutable payloads and header values are not deep-copied. */
+
     protected void copy(Exchange exchange) {
         InputSnapshot snapshot = exchange.getProperty(INPUT_SNAPSHOT, InputSnapshot.class);
         if (snapshot == null) {

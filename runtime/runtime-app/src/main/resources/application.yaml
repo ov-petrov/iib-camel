@@ -1,0 +1,66 @@
+spring:
+  application:
+    name: integration-runtime
+  datasource:
+    url: ${IIB_POSTGRES_URL:jdbc:postgresql://127.0.0.1:55432/iib_runtime}
+    username: ${IIB_POSTGRES_USER:runtime_dev}
+    password: ${IIB_POSTGRES_PASSWORD:}
+    hikari:
+      maximum-pool-size: ${IIB_POSTGRES_POOL_SIZE:10}
+      connection-timeout: 5000
+  liquibase:
+    enabled: ${iib.delivery.enabled}
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+    default-schema: ${iib.delivery.schema}
+    liquibase-schema: ${iib.delivery.schema}
+    parameters:
+      deliverySchema: ${iib.delivery.schema}
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+
+camel:
+  main:
+    run-controller: true
+    routes-include-pattern: 'false'
+  component:
+    jms:
+      enabled: false
+    kafka:
+      enabled: false
+
+iib:
+  delivery:
+    enabled: ${IIB_DELIVERY_ENABLED:true}
+    schema: ${IIB_DELIVERY_SCHEMA:public}
+    create-schema: ${IIB_DELIVERY_CREATE_SCHEMA:false}
+    publisher-enabled: ${IIB_DELIVERY_PUBLISHER_ENABLED:false}
+    batch-size: ${IIB_DELIVERY_BATCH_SIZE:20}
+    max-attempts: ${IIB_DELIVERY_MAX_ATTEMPTS:5}
+    lease: ${IIB_DELIVERY_LEASE:PT1M}
+    backoff: ${IIB_DELIVERY_BACKOFF:PT1S}
+    scheduler:
+      fixed-delay: ${IIB_DELIVERY_FIXED_DELAY:PT1S}
+  modules:
+    example:
+      enabled: ${IIB_MODULE_EXAMPLE_ENABLED:false}
+      input-uri: ${IIB_MODULE_EXAMPLE_INPUT_URI:direct:example-input}
+      source-id: ${IIB_MODULE_EXAMPLE_SOURCE_ID:example-input}
+      output-transport: ${IIB_MODULE_EXAMPLE_OUTPUT_TRANSPORT:artemis}
+      output-destination: ${IIB_MODULE_EXAMPLE_OUTPUT_DESTINATION:EXAMPLE.OUT}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: [ health, info, prometheus ]
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: [ readinessState, db ]

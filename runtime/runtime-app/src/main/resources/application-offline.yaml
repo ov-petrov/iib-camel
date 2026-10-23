@@ -1,0 +1,20 @@
+spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration
+      - org.springframework.boot.liquibase.autoconfigure.LiquibaseAutoConfiguration
+
+iib:
+  delivery:
+    enabled: false
+    publisher-enabled: false
+  modules:
+    example:
+      enabled: false
+
+management:
+  endpoint:
+    health:
+      group:
+        readiness:
+          include: [ readinessState ]

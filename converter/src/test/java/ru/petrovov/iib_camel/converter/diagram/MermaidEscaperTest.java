@@ -4,9 +4,6 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-/**
- * Таблица замен экранирования ярлыков (дизайн-документ, раздел 4.3).
- */
 class MermaidEscaperTest {
 
     @Test
@@ -19,7 +16,6 @@ class MermaidEscaperTest {
 
     @Test
     void collidesPipesAndHashesWithoutCorruption() {
-        // порядок замен важен: подстановка &#124; не должна затираться заменой #
         assertEquals("&num;&#124;", MermaidEscaper.escape("#|"));
     }
 

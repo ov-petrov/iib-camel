@@ -1,28 +1,36 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
   <modelVersion>4.0.0</modelVersion>
+
   <parent>
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-parent</artifactId>
     <version>4.1.2</version>
     <relativePath />
   </parent>
-  <groupId>ru.petrovov.iib_camel</groupId>
+
+    <groupId>ru.petrovov.iib_camel</groupId>
   <artifactId>iib-camel-runtime-parent</artifactId>
   <version>0.0.1-SNAPSHOT</version>
   <packaging>pom</packaging>
-  <name>Independent integration runtime</name>
-  <properties>
+
+    <name>Independent integration runtime</name>
+
+    <properties>
     <java.version>21</java.version>
     <camel.version>4.22.2</camel.version>
     <ibm-mq.version>9.4.5.1</ibm-mq.version>
+        <repository.root.relative-path>../..</repository.root.relative-path>
   </properties>
-  <modules>
+
+    <modules>
     <module>runtime-core</module>
     <module>runtime-delivery</module>
     <module>modules/example-module</module>
     <module>runtime-app</module>
   </modules>
-  <dependencyManagement>
+
+    <dependencyManagement>
     <dependencies>
       <dependency>
         <groupId>org.apache.camel.springboot</groupId>
@@ -38,7 +46,8 @@
         <type>pom</type>
         <scope>import</scope>
       </dependency>
-      <dependency>
+
+        <dependency>
         <groupId>ru.petrovov.iib_camel</groupId>
         <artifactId>iib-camel-runtime-core</artifactId>
         <version>${project.version}</version>
@@ -55,4 +64,45 @@
       </dependency>
     </dependencies>
   </dependencyManagement>
+
+    <build>
+        <resources>
+            <resource>
+                <directory>${project.basedir}/${repository.root.relative-path}</directory>
+                <targetPath>META-INF</targetPath>
+                <includes>
+                    <include>LICENSE</include>
+                    <include>NOTICE</include>
+                </includes>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
+            </resource>
+        </resources>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                        </path>
+                        <path>
+                            <groupId>org.springframework.boot</groupId>
+                            <artifactId>spring-boot-configuration-processor</artifactId>
+                        </path>
+                    </annotationProcessorPaths>
+                    <annotationProcessors>
+                        <annotationProcessor>lombok.launch.AnnotationProcessorHider$AnnotationProcessor
+                        </annotationProcessor>
+                        <annotationProcessor>
+                            org.springframework.boot.configurationprocessor.ConfigurationMetadataAnnotationProcessor
+                        </annotationProcessor>
+                    </annotationProcessors>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 </project>

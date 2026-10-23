@@ -1,28 +1,13 @@
 package ru.petrovov.iib_camel.converter.diagram;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 
-/**
- * Реестр категорий узлов IIB для стилизации диаграммы
- * (docs/diagram-renderer-design.ru.md, раздел 4.2, стартовый список).
- *
- * Ключ — kind из IR: каноническое имя типа узла без префикса ComIbm и суффикса .msgnode
- * (например MQInput, Compute, Subflow), сравнение без учёта регистра.
- * Input/Output — терминальные узлы подпотока (eflow:FCMSource / eflow:FCMSink);
- * неизвестный тип отображается категорией OTHER, ссылки на подпотоки — REFERENCE;
- * реестр пополняется по мере появления реальных файлов (допущение A8).
- */
 public final class NodeCategoryRegistry {
 
     private static final String SUBFLOW_KIND = "subflow";
 
     private final Map<String, NodeCategory> byKind = new HashMap<>();
 
-    /** Дефолтный реестр со стартовым набором типов узлов IIB (таблица раздела 4.2 дизайн-документа). */
     public static NodeCategoryRegistry withIibDefaults() {
         NodeCategoryRegistry registry = new NodeCategoryRegistry();
         for (String kind : List.of("MQInput", "HTTPInput", "JMSInput", "FileInput",
@@ -52,7 +37,6 @@ public final class NodeCategoryRegistry {
         byKind.put(normalize(kind), Objects.requireNonNull(category, "category"));
     }
 
-    /** Категоризация: подпотоки — REFERENCE, известные типы — по реестру, неизвестные — OTHER. */
     public NodeCategory categorize(String kind) {
         if (SUBFLOW_KIND.equals(normalize(kind))) {
             return NodeCategory.REFERENCE;

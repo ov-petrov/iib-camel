@@ -1,8 +1,5 @@
 package ru.petrovov.iib_camel.runtime.e2e;
 
-import ru.petrovov.iib_camel.converter.cli.ConvertCommand;
-import ru.petrovov.iib_camel.converter.esql.EsqlToJavaGenerator;
-import ru.petrovov.iib_camel.runtime.config.CamelMessagingConfig;
 import jakarta.jms.ConnectionFactory;
 import jakarta.jms.Message;
 import jakarta.jms.TextMessage;
@@ -23,6 +20,9 @@ import org.springframework.jms.core.JmsTemplate;
 import org.springframework.stereotype.Component;
 import org.yaml.snakeyaml.Yaml;
 import picocli.CommandLine;
+import ru.petrovov.iib_camel.converter.cli.ConvertCommand;
+import ru.petrovov.iib_camel.converter.esql.EsqlToJavaGenerator;
+import ru.petrovov.iib_camel.runtime.config.CamelMessagingConfig;
 
 import javax.tools.ToolProvider;
 import java.io.InputStream;
@@ -113,7 +113,7 @@ class GeneratedArtifactsTest {
         }
         generatedClasses = new URLClassLoader(new URL[]{classes.toUri().toURL()}, getClass().getClassLoader()) {
             @Override protected synchronized Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
-                // Saved generated classes on the parent classpath must not mask fresh output.
+
                 if (name.startsWith(EsqlToJavaGenerator.GENERATED_PACKAGE + ".")) {
                     Class<?> type = findLoadedClass(name);
                     if (type == null) type = findClass(name);

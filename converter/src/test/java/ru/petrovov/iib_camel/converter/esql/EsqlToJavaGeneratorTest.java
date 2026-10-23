@@ -4,10 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 class EsqlToJavaGeneratorTest {
 
@@ -30,11 +27,11 @@ class EsqlToJavaGeneratorTest {
         assertTrue(java.contains("protected void main(Exchange exchange)"),
                 "точка входа — аналог ESQL Main (шлюз compute() в базовом классе)");
 
-        assertTrue(java.contains("// SET OutputRoot = InputRoot;\n        copy(exchange);"));
+        assertTrue(java.contains("        copy(exchange);"));
         assertTrue(java.contains(
-                "// SET OutputRoot.MQMD.CommentField = 'CHECKED-BY-SUBFLOW';\n"
-                + "        mqmd(exchange, \"CommentField\", \"CHECKED-BY-SUBFLOW\");"));
-        assertFalse(java.contains("TODO"), "полный перевод — TODO нет");
+            "        mqmd(exchange, \"CommentField\", \"CHECKED-BY-SUBFLOW\");"));
+        assertFalse(java.contains("//"));
+        assertFalse(java.contains("/*"));
     }
 
     @Test
@@ -46,7 +43,7 @@ class EsqlToJavaGeneratorTest {
     }
 
     @Test
-    void unsupportedStatementsProduceTodoInBean() {
+    void unsupportedStatementsProduceFailFastBeanAndReportIssues() {
         String esql = """
                 BROKER SCHEMA adjust
                 CREATE COMPUTE MODULE Adjust_Compute1
@@ -64,8 +61,9 @@ class EsqlToJavaGeneratorTest {
         var bean = new EsqlToJavaGenerator().generate(module);
 
         assertFalse(bean.complete(), "IF → статус «частично»");
-        assertTrue(bean.java().contains("// TODO (FR-3.3): IF InputBody.Order.Status"),
-                "TODO-заглушка с причиной внутри compute()");
+        assertTrue(bean.issues().stream().anyMatch(issue -> issue.contains("IF InputBody.Order.Status")));
+        assertFalse(bean.java().contains("//"));
+        assertFalse(bean.java().contains("/*"));
         assertTrue(bean.java().contains("throw new UnsupportedOperationException"),
                 "неполный перевод отказывается от исполнения");
         assertFalse(bean.java().contains("\n        copy(exchange);"));
@@ -111,9 +109,9 @@ class EsqlToJavaGeneratorTest {
         assertTrue(model.java().contains("private String status;"), "поле из ESQL-пути Order.Status");
         assertTrue(model.java().contains("private String rating;"),
                 "поле из ESQL-пути Order.Rating (CAST)");
-        assertTrue(model.java().contains("CAST('100' AS DECIMAL)"),
-                "источник поля виден в javadoc-комментарии");
-        assertTrue(model.java().contains("FR-3.4"), "модель помечена уровнем FR-3.4");
+        assertFalse(model.java().contains("//"));
+        assertFalse(model.java().contains("/*"));
+        assertTrue(bean.statements().stream().anyMatch(statement -> statement.esql().contains("CAST('100' AS DECIMAL)")));
     }
 
     @Test
@@ -135,7 +133,9 @@ class EsqlToJavaGeneratorTest {
         assertEquals(1, bean.models().size());
         assertTrue(bean.models().getFirst().java().contains("private String amount;"),
                 "тип ESQL CAST не меняет строковый fallback модели");
-        assertTrue(bean.models().getFirst().java().contains("CAST('12.50' AS DECIMAL)"));
+        assertFalse(bean.models().getFirst().java().contains("//"));
+        assertFalse(bean.models().getFirst().java().contains("/*"));
+        assertTrue(bean.statements().getFirst().esql().contains("CAST('12.50' AS DECIMAL)"));
     }
 
     @Test

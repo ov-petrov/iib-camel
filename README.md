@@ -1,6 +1,7 @@
 # iib-camel
 
-A prototype for analyzing IBM Integration Bus (IIB) / IBM App Connect Enterprise (ACE) message flows and converting a supported subset to Apache Camel XML routes and Java.
+A repository with an IIB/ACE analysis and supported-subset conversion tool, plus an independent Spring Boot and Apache
+Camel runtime for manually migrated integrations.
 
 > [Русская версия](README.ru.md)
 
@@ -11,6 +12,53 @@ The `analyze` command reads `.msgflow`, `.subflow`, and `.esql` inputs. It write
 The ESQL profile supports a limited set of Compute `Main` functions, including selected `SET` operations, conditional branches, expressions, and explicit casts. Unsupported or incomplete ESQL is reported and its generated bean stops before running business operations. The converter also generates models for a subset of XSD and JSON Schema and MapStruct processors for simple same-type XMLNSC field moves in IBM `.map` files. These features do not cover full ESQL, ULM, or IBM Mapping semantics. `convert` applies a strict readiness gate by default; unsupported or ambiguous project features need review before using generated routes. See [implementation progress](docs/implementation-progress.ru.md), the [pilot profile](docs/pilot-profile.ru.md), and the [deployment guide](deploy/README.ru.md) for the supported limits and required runtime checks.
 
 This is an experimental migration aid, not a complete IIB/ACE parser or a production migration service. Generated output must be reviewed and validated against the source application and target environment. The converter and integration runtime are independent Maven projects with separate JDK requirements; the runtime is not the legacy execution environment used by compatibility tests.
+
+## Architecture
+
+The repository contains two independent projects. The Java 25 converter analyzes IIB/ACE inputs and generates artifacts
+for a supported subset. The Java 21 runtime is a separate Spring Boot and Camel application for manually assembled
+integrations; generated converter output is not loaded into it automatically. Business behavior, including ESQL
+transformations, must be reviewed and implemented in runtime modules. The example module only passes message bytes
+through.
+
+The root Maven reactor includes the converter, runtime, and compatibility-test projects. The runtime also has its own
+parent POM and reactor under `runtime/`, which sets its Java 21 compiler target and manages its modules.
+
+| Module                                | Responsibility                                                                            |
+|---------------------------------------|-------------------------------------------------------------------------------------------|
+| `converter/`                          | Java 25 CLI for IIB/ACE analysis and supported-subset conversion.                         |
+| `runtime/runtime-core/`               | Java 21 Camel transports, XML support, and message envelopes.                             |
+| `runtime/runtime-delivery/`           | PostgreSQL inbox/outbox delivery services and persistence.                                |
+| `runtime/modules/example-module/`     | Example Java handler and manually authored Camel XML route; passes payload bytes through. |
+| `runtime/runtime-app/`                | Boot executable that wires the runtime libraries and integration modules.                 |
+| `compatibility-tests/legacy-runtime/` | Java 25 test-only environment for generated-artifact converter regression tests.          |
+| `examples/analyze/`, `docs/`          | Illustrative analysis inputs, requirements, and migration guidance.                       |
+
+```mermaid
+flowchart TB
+    subgraph converter_project["Converter · Java 25"]
+        direction TB
+        sources["IIB / ACE inputs"] --> cli["converter"]
+        cli --> generated["Reports, Camel XML and Java"]
+        legacy["compatibility-tests<br/>legacy-runtime"] -.-> cli
+    end
+    subgraph runtime_project["Runtime · Java 21"]
+        direction TB
+        app["runtime-app"]
+        example["modules/example-module"]
+        delivery["runtime-delivery"]
+        core["runtime-core"]
+        app -.-> example
+        app -.-> delivery
+        app -.-> core
+        example -.-> delivery
+        delivery -.-> core
+    end
+```
+
+Dashed arrows show Maven dependencies. The converter and runtime have no dependency or automatic artifact handoff
+between them. See the [runtime guide](runtime/README.ru.md) for its module model, configuration, delivery behavior, and
+startup instructions.
 
 ## Build
 
@@ -50,14 +98,6 @@ java -jar converter/target/converter.jar convert \
 ```
 
 Generated artifacts are written to the selected output directory. Review the command report and any unsupported-operation diagnostics before using the results.
-
-## Project layout
-
-- `converter/` — one-shot Java CLI for analysis and conversion.
-- `runtime/` — independent Spring Boot 4.1.2 and Apache Camel 4.22.2 LTS application, built for Java 21 with Jackson 3 XML. PostgreSQL-backed inbox/outbox delivery is enabled by default; its scheduled publisher is opt-in, and connectors are disabled unless enabled explicitly. The `offline` profile starts without PostgreSQL or connectors.
-- `compatibility-tests/legacy-runtime/` — Java 25 legacy runtime retained only to run converter compatibility tests.
-- `examples/analyze/` — small illustrative inputs for the `analyze` command.
-- `docs/` — requirements, design notes, migration guidance, and implementation status.
 
 ## Documentation
 

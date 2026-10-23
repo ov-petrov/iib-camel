@@ -3,9 +3,7 @@ BROKER SCHEMA adapter
 CREATE COMPUTE MODULE Adapter_Compute1
   CREATE FUNCTION Main() RETURNS BOOLEAN
   BEGIN
-    -- копируем сообщение целиком (тело и MQMD)
     SET OutputRoot = InputRoot;
-    -- метка миграции: проверяется в e2e-тестах (expected/e2e/dataset.yml)
     SET OutputRoot.MQMD.ApplicationIdData = 'IIB-CAMEL-MIG';
     RETURN TRUE;
   END;

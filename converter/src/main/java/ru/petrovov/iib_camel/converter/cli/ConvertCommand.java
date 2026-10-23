@@ -1,31 +1,22 @@
 package ru.petrovov.iib_camel.converter.cli;
 
+import picocli.CommandLine.Command;
+import picocli.CommandLine.Option;
 import ru.petrovov.iib_camel.converter.camel.RouteGenerator;
 import ru.petrovov.iib_camel.converter.esql.EsqlFunction;
 import ru.petrovov.iib_camel.converter.esql.EsqlModule;
 import ru.petrovov.iib_camel.converter.esql.EsqlParser;
 import ru.petrovov.iib_camel.converter.esql.EsqlToJavaGenerator;
-import ru.petrovov.iib_camel.converter.esql.EsqlTranslator;
 import ru.petrovov.iib_camel.converter.msgflow.MsgFlow;
 import ru.petrovov.iib_camel.converter.msgflow.MsgFlowParser;
 import ru.petrovov.iib_camel.converter.project.MappingProject;
-import ru.petrovov.iib_camel.converter.report.Diagnosis;
 import ru.petrovov.iib_camel.converter.report.RouteResult;
 import ru.petrovov.iib_camel.converter.report.UnitStatus;
-import picocli.CommandLine.Command;
-import picocli.CommandLine.Option;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.Set;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.Callable;
 import java.util.stream.Stream;
 
@@ -463,7 +454,7 @@ public final class ConvertCommand implements Callable<Integer> {
             return;
         }
         report.append("## ESQL\n\nМодули переведены подмножеством (FR-3.2): `SET OutputRoot = InputRoot`,"
-                + "`MQMD-поля`, `строковые поля тела`, `CAST-литералы`; ветвления и вызовы — TODO в бине"
+                + "`MQMD-поля`, `строковые поля тела`, `CAST-литералы`; непереводимые конструкции описаны в отчёте; неполный бин блокирует исполнение"
                 + " (FR-3.3).\n\n")
                 .append("| Файл | Модуль | Функций | Присваиваний (SET) | Статус | Примечание |\n|---|---|---|---|---|---|\n");
         for (EsqlUnit u : esqlUnits) {

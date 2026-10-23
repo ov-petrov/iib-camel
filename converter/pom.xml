@@ -1,24 +1,31 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
   <modelVersion>4.0.0</modelVersion>
+
   <parent>
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-parent</artifactId>
     <version>4.1.1</version>
     <relativePath />
   </parent>
+
   <groupId>ru.petrovov.iib_camel</groupId>
   <artifactId>iib-camel-converter</artifactId>
   <version>0.0.1-SNAPSHOT</version>
+
   <name>iib-camel-converter</name>
   <description>CLI for IIB flow analysis, bounded ESQL translation and Apache Camel XML generation</description>
+
   <properties>
     <java.version>25</java.version>
   </properties>
+
   <dependencies>
     <dependency>
       <groupId>tools.jackson.core</groupId>
       <artifactId>jackson-databind</artifactId>
     </dependency>
+
     <dependency>
       <groupId>org.mapstruct</groupId>
       <artifactId>mapstruct</artifactId>
@@ -31,22 +38,26 @@
       <version>1.6.3</version>
       <scope>test</scope>
     </dependency>
+
     <dependency>
       <groupId>org.springframework</groupId>
       <artifactId>spring-context</artifactId>
       <scope>test</scope>
     </dependency>
+
     <dependency>
       <groupId>info.picocli</groupId>
       <artifactId>picocli</artifactId>
       <version>4.7.6</version>
     </dependency>
+
     <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter</artifactId>
       <scope>test</scope>
     </dependency>
   </dependencies>
+
   <build>
     <finalName>converter</finalName>
     <resources>
@@ -54,7 +65,7 @@
         <directory>src/main/resources</directory>
       </resource>
       <resource>
-        <directory>${project.basedir}</directory>
+        <directory>${project.basedir}/..</directory>
         <targetPath>META-INF</targetPath>
         <includes>
           <include>LICENSE</include>
@@ -68,9 +79,9 @@
         <artifactId>maven-assembly-plugin</artifactId>
         <version>3.7.1</version>
         <configuration>
-          <descriptorRefs>
-            <descriptorRef>jar-with-dependencies</descriptorRef>
-          </descriptorRefs>
+          <descriptors>
+            <descriptor>src/assembly/cli.xml</descriptor>
+          </descriptors>
           <archive>
             <manifest>
               <mainClass>ru.petrovov.iib_camel.converter.ConverterApplication</mainClass>

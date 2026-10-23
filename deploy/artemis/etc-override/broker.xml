@@ -31,7 +31,7 @@
     </security-settings>
     <address-settings>
       <address-setting match="#">
-        <!-- Application policy owns rollback retries and quarantine. -->
+
         <max-delivery-attempts>-1</max-delivery-attempts>
         <redelivery-delay>0</redelivery-delay>
         <auto-create-queues>true</auto-create-queues>

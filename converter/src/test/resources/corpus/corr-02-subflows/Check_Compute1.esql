@@ -3,9 +3,7 @@ BROKER SCHEMA check
 CREATE COMPUTE MODULE Check_Compute1
   CREATE FUNCTION Main() RETURNS BOOLEAN
   BEGIN
-    -- копируем сообщение целиком (тело и MQMD)
     SET OutputRoot = InputRoot;
-    -- служебная пометка подпотока проверки (аналог corr-01:.ApplicationIdData)
     SET OutputRoot.MQMD.CommentField = 'CHECKED-BY-SUBFLOW';
     RETURN TRUE;
   END;

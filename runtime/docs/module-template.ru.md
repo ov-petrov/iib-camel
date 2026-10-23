@@ -41,11 +41,16 @@ mvn -B -pl runtime-app -am package
 
 Автоконфигурацию модуля объявите через `@AutoConfiguration`, ограничьте `@ConditionalOnProperty` и внесите полное имя класса в `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`. Обычный `@Component` в произвольном каталоге автоматически не обнаруживается: приложение сканирует только собственный пакет. В готовом модуле `example` есть полный пример регистрации.
 
+Параметры модуля сгруппируйте в `@ConfigurationProperties("iib.modules.<id>")`, зарегистрируйте через
+`@EnableConfigurationProperties` и передавайте этот объект обработчикам. Для стандартных геттеров/сеттеров используйте
+Lombok `@Getter`/`@Setter`; проверки настроек оставляйте явными. Значения развёртывания задавайте в YAML и окружении. В
+`example` этот контракт реализован классом `ExampleModuleProperties`; отдельные `@Value` для каждой настройки не нужны.
+
 Бизнес-обработчик передаётся в `InboxService.accept`. Его `JdbcTemplate` должен использовать тот же `DataSource`: тогда изменения бизнес-таблиц присоединятся к транзакции inbox/outbox. Прямые отправки брокеру внутри этого обработчика нарушают такую атомарность; вместо них верните список `OutboundMessage` с выбранными транспортами и назначениями. Это также подходит для чтения бизнес-записей планировщиком и переноса их в outbox: изменение статуса исходной записи выполняйте внутри обработчика. JPA по умолчанию не включён; его добавление требует согласовать менеджер транзакций, а не только добавить зависимость Hibernate.
 
 У встроенного примерного модуля одно свойство `IIB_MODULE_EXAMPLE_INPUT_URI`, поэтому оно задаёт один вход. Для нескольких источников добавьте отдельные маршруты с соответствующими URI, включите нужные `IIB_TRANSPORTS_*_ENABLED` флаги и `IIB_MODULE_EXAMPLE_ENABLED=true`. Например:
 
-```properties
+```dotenv
 IIB_TRANSPORTS_ARTEMIS_ENABLED=true
 IIB_TRANSPORTS_IBMMQ_ENABLED=true
 IIB_TRANSPORTS_KAFKA_ENABLED=true

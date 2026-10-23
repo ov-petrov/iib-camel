@@ -2,7 +2,8 @@
 
 `TCPIPClient_Mapping.map` is copied without changes from
 [ot4i/tcpip-input-tutorial](https://github.com/ot4i/tcpip-input-tutorial/blob/1dd375a2dbe78ac00cafcc440daee3551a01d5f8/src/TCPIPClient/TCPIPClient_Mapping.map),
-commit `1dd375a2dbe78ac00cafcc440daee3551a01d5f8`, MIT license (included).
+commit `1dd375a2dbe78ac00cafcc440daee3551a01d5f8`, MIT license (full text in
+the [repository NOTICE](../../../../../../NOTICE)).
 The repository is an IBM Integration Bus Toolkit tutorial published by Open
 Technologies for Integration. It establishes the native `mappingRoot`,
 `mappingDeclaration`, `mb:msg(...)`, assembly variables and `move` syntax.

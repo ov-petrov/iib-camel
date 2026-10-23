@@ -1,28 +1,25 @@
 package ru.petrovov.iib_camel.runtime.modules.example;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.inOrder;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.when;
-
-import java.nio.charset.StandardCharsets;
-import org.apache.camel.impl.DefaultCamelContext;
-import org.apache.camel.support.DefaultExchange;
 import org.apache.camel.component.kafka.KafkaConstants;
 import org.apache.camel.component.kafka.consumer.KafkaManualCommit;
+import org.apache.camel.impl.DefaultCamelContext;
+import org.apache.camel.support.DefaultExchange;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
-import ru.petrovov.iib_camel.runtime.delivery.Acceptance;
-import ru.petrovov.iib_camel.runtime.delivery.InboxService;
-import ru.petrovov.iib_camel.runtime.delivery.MessageHandler;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import ru.petrovov.iib_camel.runtime.delivery.handler.MessageHandler;
+import ru.petrovov.iib_camel.runtime.delivery.inbox.Acceptance;
+import ru.petrovov.iib_camel.runtime.delivery.inbox.InboxService;
 import ru.petrovov.iib_camel.runtime.message.InboundMessage;
+
+import java.nio.charset.StandardCharsets;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
 
 class ExampleModuleConfigurationTest {
     private final InboxService inbox = mock(InboxService.class);
@@ -31,7 +28,45 @@ class ExampleModuleConfigurationTest {
 
     @BeforeEach
     void setUp() {
-        processor = configuration.exampleReceive(inbox, "synthetic-source", "jms", "synthetic-output");
+        var properties = new ExampleModuleProperties();
+        properties.setSourceId("synthetic-source");
+        properties.setOutputTransport("jms");
+        properties.setOutputDestination("synthetic-output");
+        processor = configuration.exampleReceive(inbox, properties);
+    }
+
+    @Test
+    void bindsConfiguredValuesWithoutRequiringDatabase() {
+        new ApplicationContextRunner()
+            .withUserConfiguration(ExampleModuleConfiguration.class)
+            .withBean(InboxService.class, () -> mock(InboxService.class))
+            .withPropertyValues(
+                "iib.modules.example.enabled=true",
+                "iib.modules.example.input-uri=direct:custom-input",
+                "iib.modules.example.source-id=custom-source",
+                "iib.modules.example.output-transport=custom-transport",
+                "iib.modules.example.output-destination=custom-destination")
+            .run(context -> {
+                assertThat(context).hasNotFailed();
+                var properties = context.getBean(ExampleModuleProperties.class);
+                assertThat(properties.getInputUri()).isEqualTo("direct:custom-input");
+                assertThat(properties.getSourceId()).isEqualTo("custom-source");
+                assertThat(properties.getOutputTransport()).isEqualTo("custom-transport");
+                assertThat(properties.getOutputDestination()).isEqualTo("custom-destination");
+                assertThat(context).hasBean("exampleReceive");
+            });
+    }
+
+    @Test
+    void disabledModuleDoesNotRequireInboxOrDatabase() {
+        new ApplicationContextRunner()
+            .withUserConfiguration(ExampleModuleConfiguration.class)
+            .withPropertyValues("iib.modules.example.enabled=false")
+            .run(context -> {
+                assertThat(context).hasNotFailed();
+                assertThat(context).doesNotHaveBean(ExampleModuleProperties.class);
+                assertThat(context).doesNotHaveBean(InboxService.class);
+            });
     }
 
     @Test

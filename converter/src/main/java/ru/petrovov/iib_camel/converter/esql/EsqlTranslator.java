@@ -7,7 +7,6 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** Перевод явно поддерживаемых SET; непонятная логика сохраняется в диагностике. */
 public final class EsqlTranslator {
 
     private static final Pattern MQMD_TARGET =
@@ -70,7 +69,7 @@ public final class EsqlTranslator {
         try {
             expression = EsqlExpression.compile(value);
         } catch (IllegalArgumentException e) {
-            return unsupported(target, value, assignment, e.getMessage());
+            return unsupported(assignment, e.getMessage());
         }
         Matcher mqmd = MQMD_TARGET.matcher(target);
         if (mqmd.matches()) {
@@ -86,9 +85,9 @@ public final class EsqlTranslator {
                             + " → поле XML" + (value.strip().toUpperCase(java.util.Locale.ROOT).startsWith("CAST") ? " (" + value + ")" : ""));
         }
         if (target.regionMatches(true, 0, "OutputRoot.JSON", 0, "OutputRoot.JSON".length())) {
-            return unsupported(target, value, assignment, "домен JSON не поддерживается XML-runtime");
+            return unsupported(assignment, "домен JSON не поддерживается XML-runtime");
         }
-        return unsupported(target, value, assignment, "цель вне переводимого подмножества");
+        return unsupported(assignment, "цель вне переводимого подмножества");
     }
 
     private StatementTranslation translateStatement(EsqlStatement statement) {
@@ -105,7 +104,7 @@ public final class EsqlTranslator {
             java.append("}");
             return new StatementTranslation(conditional.source(), java.toString(), UnitStatus.CONVERTED, "IF/ELSE");
         } catch (IllegalArgumentException e) {
-            return new StatementTranslation(conditional.source(), "// TODO (FR-3.3): IF требует ручной миграции",
+            return new StatementTranslation(conditional.source(), "",
                     UnitStatus.NOT_SUPPORTED, e.getMessage());
         }
     }
@@ -140,11 +139,10 @@ public final class EsqlTranslator {
                 && target.equalsIgnoreCase("OutputRoot");
     }
 
-    private static StatementTranslation unsupported(String target, String value,
-                                                    EsqlAssignment assignment, String reason) {
+    private static StatementTranslation unsupported(EsqlAssignment assignment, String reason) {
         return new StatementTranslation(
                 original(assignment),
-                "// TODO (FR-3.3): не переводится автоматически: SET " + target + " = " + value,
+            "",
                 UnitStatus.NOT_SUPPORTED,
                 reason);
     }

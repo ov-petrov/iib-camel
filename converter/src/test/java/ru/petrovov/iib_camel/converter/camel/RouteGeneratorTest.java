@@ -1,18 +1,17 @@
 package ru.petrovov.iib_camel.converter.camel;
 
+import org.junit.jupiter.api.Test;
 import ru.petrovov.iib_camel.converter.msgflow.FlowConnection;
 import ru.petrovov.iib_camel.converter.msgflow.FlowNode;
 import ru.petrovov.iib_camel.converter.msgflow.MsgFlow;
 import ru.petrovov.iib_camel.converter.msgflow.MsgFlowParser;
 import ru.petrovov.iib_camel.converter.report.UnitStatus;
-import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 class RouteGeneratorTest {
 
@@ -50,7 +49,7 @@ class RouteGeneratorTest {
         assertTrue(xml.contains("<to uri=\"jms:ADAPTER.ERROR.Q\"/>"));
         assertTrue(xml.contains("<doCatch>"));
         assertTrue(xml.contains("<otherwise>"));
-        assertTrue(xml.contains("source: узел RouteByStatus"));
+        assertFalse(xml.contains("<!--"));
     }
 
     @Test

@@ -20,5 +20,7 @@ public class RuntimeXmlAutoConfiguration {
     @Bean
     @Primary
     @ConditionalOnMissingBean(JsonMapper.class)
-    JsonMapper jsonMapper() { return JsonMapper.builder().build(); }
+    JsonMapper jsonMapper() {
+        return JsonMapper.builder().build();
+    }
 }
