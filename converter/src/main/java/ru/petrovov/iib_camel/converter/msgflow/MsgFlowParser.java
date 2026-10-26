@@ -2,16 +2,18 @@ package ru.petrovov.iib_camel.converter.msgflow;
 
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
-import org.w3c.dom.NamedNodeMap;
 import org.w3c.dom.Node;
+import ru.petrovov.iib_camel.converter.analysis.model.FlowDocument;
+import ru.petrovov.iib_camel.converter.analysis.model.SourceRef;
 
-import javax.xml.XMLConstants;
-import javax.xml.parsers.DocumentBuilderFactory;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 public final class MsgFlowParser {
@@ -23,19 +25,80 @@ public final class MsgFlowParser {
 
     public MsgFlow parse(InputStream input) {
         try {
-            var dbf = DocumentBuilderFactory.newInstance();
-            dbf.setNamespaceAware(true);
-            dbf.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
-            dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-            Document doc = dbf.newDocumentBuilder().parse(input);
-            return fromDocument(doc);
+            return fromDocument(SourceDocumentReader.read(input, ""));
         } catch (IllegalArgumentException e) {
             throw e;
         } catch (Exception e) {
             throw new IllegalArgumentException("ошибка разбора .msgflow: " + e.getMessage(), e);
         }
+    }
+
+    public FlowDocument parseDocument(InputStream input, String sourceFile) {
+        Objects.requireNonNull(sourceFile, "sourceFile");
+        try {
+            Document document = SourceDocumentReader.read(input, sourceFile);
+            MsgFlow flow = fromDocument(document);
+            Map<String, SourceRef> nodeSources = new LinkedHashMap<>();
+            var nodeElements = document.getElementsByTagNameNS("*", "nodes");
+            for (int i = 0; i < nodeElements.getLength(); i++) {
+                Element node = (Element) nodeElements.item(i);
+                nodeSources.put(xmiAttribute(node, "id"), SourceDocumentReader.source(node, sourceFile));
+            }
+
+            List<SourceRef> connectionSources = new ArrayList<>();
+            var connectionElements = document.getElementsByTagNameNS("*", "connections");
+            for (int i = 0; i < connectionElements.getLength(); i++) {
+                connectionSources.add(SourceDocumentReader.source((Element) connectionElements.item(i), sourceFile));
+            }
+
+            return new FlowDocument(sourceFile, sourceFile.toLowerCase(Locale.ROOT).endsWith(".subflow"), flow,
+                    SourceDocumentReader.source(document.getDocumentElement(), sourceFile), nodeSources,
+                    connectionSources, propertyDefinitions(document, sourceFile), propertyLinks(document, sourceFile));
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IllegalArgumentException("ошибка разбора .msgflow: " + e.getMessage(), e);
+        }
+    }
+
+    private List<FlowDocument.PropertyDefinition> propertyDefinitions(Document document, String sourceFile) {
+        List<FlowDocument.PropertyDefinition> definitions = new ArrayList<>();
+        var features = document.getElementsByTagNameNS("*", "eStructuralFeatures");
+        for (int i = 0; i < features.getLength(); i++) {
+            Element feature = (Element) features.item(i);
+            String type = xmiAttribute(feature, "type");
+            if (!"EAttribute".equals(typeLocalName(type)) || !ECORE_NS.equals(typeNamespace(feature, type))) {
+                continue;
+            }
+            definitions.add(new FlowDocument.PropertyDefinition(xmiAttribute(feature, "id"),
+                    feature.getAttribute("name"),
+                    feature.hasAttribute("defaultValueLiteral") ? feature.getAttribute("defaultValueLiteral") : null,
+                    SourceDocumentReader.source(feature, sourceFile)));
+        }
+        return definitions;
+    }
+
+    private List<FlowDocument.PropertyLink> propertyLinks(Document document, String sourceFile) {
+        List<FlowDocument.PropertyLink> links = new ArrayList<>();
+        var linkElements = document.getElementsByTagNameNS("*", "attributeLinks");
+        for (int i = 0; i < linkElements.getLength(); i++) {
+            Element link = (Element) linkElements.item(i);
+            List<String> nodeIds = Arrays.stream(link.getAttribute("overriddenNodes").strip().split("\\s+"))
+                    .filter(value -> !value.isEmpty())
+                    .toList();
+            var attributes = link.getElementsByTagNameNS("*", "overriddenAttribute");
+            for (int a = 0; a < attributes.getLength(); a++) {
+                Element attribute = (Element) attributes.item(a);
+                String href = attribute.getAttribute("href");
+                String target = href.substring(href.lastIndexOf('#') + 1);
+                if (target.startsWith("Property.")) {
+                    target = target.substring("Property.".length());
+                }
+                links.add(new FlowDocument.PropertyLink(link.getAttribute("promotedAttribute"), nodeIds,
+                        target, SourceDocumentReader.source(attribute, sourceFile)));
+            }
+        }
+        return links;
     }
 
     private MsgFlow fromDocument(Document doc) {

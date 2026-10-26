@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ecore:EPackage xmi:version="2.0"
+    xmlns:xmi="http://www.omg.org/XMI"
+    xmlns:ecore="http://www.eclipse.org/emf/2002/Ecore"
+    xmlns:eflow="http://www.ibm.com/wbi/2005/eflow"
+    xmlns:utility="http://www.ibm.com/wbi/2005/eflow_utility"
+    xmlns:ComIbmMQInput.msgnode="ComIbmMQInput.msgnode"
+    xmlns:ComIbmMQGet.msgnode="ComIbmMQGet.msgnode"
+    xmlns:ComIbmMQOutput.msgnode="ComIbmMQOutput.msgnode"
+    nsURI="Consumer.msgflow" nsPrefix="Consumer.msgflow">
+  <eClassifiers xmi:type="eflow:FCMComposite" name="FCMComposite_1">
+    <composition>
+      <nodes xmi:type="ComIbmMQInput.msgnode:FCMComposite_1" xmi:id="In" queueName="DEMO.NEXT" destinationQueueManagerName="QM_DEMO"/>
+      <nodes xmi:type="ComIbmMQGet.msgnode:FCMComposite_1" xmi:id="Get" queueName="DEMO.CACHE" destinationQueueManagerName="QM_DEMO"/>
+      <nodes xmi:type="ComIbmMQOutput.msgnode:FCMComposite_1" xmi:id="Out" queueName="DEMO.DONE" destinationQueueManagerName="QM_DEMO"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="C1" sourceNode="In" sourceTerminalName="OutTerminal.out" targetNode="Get" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="C2" sourceNode="Get" sourceTerminalName="OutTerminal.out" targetNode="Out" targetTerminalName="InTerminal.in"/>
+    </composition>
+  </eClassifiers>
+</ecore:EPackage>

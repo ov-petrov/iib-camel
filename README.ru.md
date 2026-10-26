@@ -80,6 +80,16 @@ mvn -B -f runtime/pom.xml verify
 
 ## Примеры CLI
 
+Составить каталог очередей/топиков и карту связей по `.msgflow`/`.subflow`, сохранив ESQL как ссылки на обработчики:
+
+```sh
+java -jar converter/target/converter.jar analyze --inventory \
+  --input examples/analyze/inventory --output output/inventory
+```
+
+Начальная страница — `system-overview.md`; рядом CSV, JSON и карточки потоков.
+[Состав примера и ограничения анализа](examples/analyze/inventory/README.ru.md).
+
 Проанализировать демонстрационные входы и создать отчёты Mermaid, AsciiDoc и Markdown:
 
 ```sh

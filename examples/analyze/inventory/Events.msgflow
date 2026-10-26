@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ecore:EPackage xmi:version="2.0"
+    xmlns:xmi="http://www.omg.org/XMI"
+    xmlns:ecore="http://www.eclipse.org/emf/2002/Ecore"
+    xmlns:eflow="http://www.ibm.com/wbi/2005/eflow"
+    xmlns:ComIbmKafkaConsumer.msgnode="ComIbmKafkaConsumer.msgnode"
+    xmlns:ComIbmKafkaProducer.msgnode="ComIbmKafkaProducer.msgnode"
+    nsURI="Events.msgflow" nsPrefix="Events.msgflow">
+  <eClassifiers xmi:type="eflow:FCMComposite" name="FCMComposite_1">
+    <composition>
+      <nodes xmi:type="ComIbmKafkaConsumer.msgnode:FCMComposite_1" xmi:id="KafkaIn" topicName="DEMO.events" bootstrapServers="broker.demo:9092"/>
+      <nodes xmi:type="ComIbmKafkaProducer.msgnode:FCMComposite_1" xmi:id="KafkaOut" topicName="DEMO.events" bootstrapServers="broker.demo:9092"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="C1" sourceNode="KafkaIn" sourceTerminalName="OutTerminal.out" targetNode="KafkaOut" targetTerminalName="InTerminal.in"/>
+    </composition>
+  </eClassifiers>
+</ecore:EPackage>

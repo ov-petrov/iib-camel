@@ -80,6 +80,16 @@ The converter JAR is created at `converter/target/converter.jar`. Runtime requir
 
 ## CLI examples
 
+Inventory queues/topics and flow links from `.msgflow`/`.subflow`, keeping ESQL as opaque handler references:
+
+```sh
+java -jar converter/target/converter.jar analyze --inventory \
+  --input examples/analyze/inventory --output output/inventory
+```
+
+Start with `system-overview.md`; CSV, JSON, and individual flow reports are written alongside it.
+[Example and analysis limitations (RU)](examples/analyze/inventory/README.ru.md).
+
 Analyze the included demonstration inputs and write Mermaid, AsciiDoc, and Markdown reports:
 
 ```sh

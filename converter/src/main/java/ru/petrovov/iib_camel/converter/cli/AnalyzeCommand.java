@@ -54,6 +54,9 @@ public final class AnalyzeCommand implements Callable<Integer> {
     @Option(names = "--fail-fast", description = "Остановить пакетную обработку на первой ошибке разбора.")
     boolean failFast;
 
+    @Option(names = "--inventory", description = "Карта очередей/топиков и подпотоков без чтения ESQL: Markdown, CSV и JSON.")
+    boolean inventory;
+
     @Option(names = "--strict", description = "Код 2, если проект не готов к профилю пилота, включая неподдерживаемые конструкции.")
     boolean strict;
 
@@ -99,6 +102,9 @@ public final class AnalyzeCommand implements Callable<Integer> {
             return 1;
         }
         List<Path> esqlFiles = collectEsqlFiles();
+        if (inventory) {
+            return new InventoryAnalysis().run(input, output, files, esqlFiles, orient, failFast, strict);
+        }
         if (files.isEmpty() && esqlFiles.isEmpty()) {
             System.err.println("В \"" + input + "\" не найдено файлов .msgflow/.subflow/.esql");
             return 3;
