@@ -2,11 +2,13 @@ package ru.petrovov.iib_camel.runtime_lite.config;
 
 import org.junit.jupiter.api.Test;
 import ru.petrovov.iib_camel.runtime_lite.jdbc.DeliveryTables;
+import ru.petrovov.iib_camel.runtime_lite.transport.BrokerRegistry;
 
 import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
+import static org.mockito.Mockito.mock;
 
 class RoutingConfigurationTest {
 
@@ -17,7 +19,7 @@ class RoutingConfigurationTest {
         route.setOutput("missing");
         properties.getRoutes().put("sample", route);
 
-        assertThatIllegalArgumentException().isThrownBy(() -> new RoutingCatalog(properties).validate())
+        assertThatIllegalArgumentException().isThrownBy(() -> new RoutingCatalog(properties, mock(BrokerRegistry.class)).validate())
             .withMessageContaining("Unknown destination");
     }
 

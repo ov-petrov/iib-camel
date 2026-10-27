@@ -14,20 +14,23 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.jms.config.DefaultJmsListenerContainerFactory;
 import org.springframework.kafka.core.DefaultKafkaProducerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
-import ru.petrovov.iib_camel.runtime_lite.transport.BrokerMessageSender;
-import ru.petrovov.iib_camel.runtime_lite.transport.JmsMessageReader;
-import ru.petrovov.iib_camel.runtime_lite.transport.MessageSender;
+import ru.petrovov.iib_camel.runtime_lite.transport.*;
 
-import java.util.HashMap;
+import java.util.*;
 
 @Configuration(proxyBeanMethods = false)
-@EnableConfigurationProperties({MqProperties.class, KafkaProducerProperties.class, ListenerProperties.class})
+@EnableConfigurationProperties({MqProperties.class, KafkaProducerProperties.class, ListenerProperties.class,
+    TransportsProperties.class})
 public class TransportConfiguration {
 
     @Bean
     @ConditionalOnMissingBean(ConnectionFactory.class)
     @ConditionalOnProperty(prefix = "runtime-lite.mq", name = "enabled", havingValue = "true", matchIfMissing = true)
     ConnectionFactory liteConnectionFactory(MqProperties properties) throws Exception {
+        return createMqFactory(properties);
+    }
+
+    private MQConnectionFactory createMqFactory(MqProperties properties) throws Exception {
         var factory = new MQConnectionFactory();
         factory.setTransportType(WMQConstants.WMQ_CM_CLIENT);
         factory.setHostName(properties.getHost());
@@ -50,6 +53,11 @@ public class TransportConfiguration {
 
     @Bean
     DefaultJmsListenerContainerFactory liteJmsListenerContainerFactory(
+        ConnectionFactory connectionFactory, ListenerProperties properties) {
+        return createListenerFactory(connectionFactory, properties);
+    }
+
+    private DefaultJmsListenerContainerFactory createListenerFactory(
         ConnectionFactory connectionFactory, ListenerProperties properties) {
         var factory = new DefaultJmsListenerContainerFactory();
         factory.setConnectionFactory(connectionFactory);
@@ -89,8 +97,63 @@ public class TransportConfiguration {
     }
 
     @Bean
-    MessageSender messageSender(ConnectionFactory connectionFactory, KafkaTemplate<String, byte[]> kafkaTemplate,
-        KafkaProducerProperties properties) {
-        return new BrokerMessageSender(connectionFactory, kafkaTemplate, properties);
+    BrokerRegistry brokerRegistry(ConnectionFactory defaultConnectionFactory,
+                                  DefaultJmsListenerContainerFactory liteJmsListenerContainerFactory,
+                                  KafkaTemplate<String, byte[]> liteKafkaTemplate, KafkaProducerProperties kafkaProperties,
+                                  TransportsProperties transports, ListenerProperties listenerProperties) throws Exception {
+        validateNames(transports);
+        Map<String, ConnectionFactory> jms = new LinkedHashMap<>();
+        Map<String, DefaultJmsListenerContainerFactory> listeners = new LinkedHashMap<>();
+        Map<String, BrokerRegistry.KafkaBroker> kafka = new LinkedHashMap<>();
+        var ownedFactories = new ArrayList<DefaultKafkaProducerFactory<String, byte[]>>();
+        jms.put(BrokerIds.DEFAULT_MQ, defaultConnectionFactory);
+        listeners.put(BrokerIds.DEFAULT_MQ, liteJmsListenerContainerFactory);
+        kafka.put(BrokerIds.DEFAULT_KAFKA,
+            new BrokerRegistry.KafkaBroker(liteKafkaTemplate, kafkaProperties.getSendTimeout()));
+        try {
+            for (var entry : transports.getMq().entrySet()) {
+                if (!entry.getValue().isEnabled()) {
+                    throw new IllegalArgumentException("Named MQ broker must be enabled: " + entry.getKey());
+                }
+                var factory = createMqFactory(entry.getValue());
+                jms.put(entry.getKey(), factory);
+                listeners.put(entry.getKey(), createListenerFactory(factory, listenerProperties));
+            }
+            for (var entry : transports.getKafka().entrySet()) {
+                var factory = liteKafkaProducerFactory(entry.getValue());
+                ownedFactories.add(factory);
+                kafka.put(entry.getKey(), new BrokerRegistry.KafkaBroker(
+                    new KafkaTemplate<>(factory), entry.getValue().getSendTimeout()));
+            }
+            return new BrokerRegistry(jms, listeners, kafka, ownedFactories);
+        } catch (Exception | Error failure) {
+            for (var factory : ownedFactories) {
+                try {
+                    factory.destroy();
+                } catch (RuntimeException cleanupFailure) {
+                    failure.addSuppressed(cleanupFailure);
+                }
+            }
+            throw failure;
+        }
+    }
+
+    private void validateNames(TransportsProperties properties) {
+        var reserved = Set.of(BrokerIds.DEFAULT_MQ, BrokerIds.DEFAULT_KAFKA);
+        for (var id : properties.getMq().keySet()) {
+            if (reserved.contains(id) || properties.getKafka().containsKey(id)) {
+                throw new IllegalArgumentException("Duplicate or reserved broker name: " + id);
+            }
+        }
+        for (var id : properties.getKafka().keySet()) {
+            if (reserved.contains(id)) {
+                throw new IllegalArgumentException("Duplicate or reserved broker name: " + id);
+            }
+        }
+    }
+
+    @Bean
+    MessageSender messageSender(BrokerRegistry brokerRegistry) {
+        return new BrokerMessageSender(brokerRegistry);
     }
 }

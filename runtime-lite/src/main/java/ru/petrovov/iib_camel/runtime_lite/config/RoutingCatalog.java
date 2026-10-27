@@ -3,16 +3,23 @@ package ru.petrovov.iib_camel.runtime_lite.config;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
+import ru.petrovov.iib_camel.runtime_lite.transport.BrokerIds;
+import ru.petrovov.iib_camel.runtime_lite.transport.BrokerRegistry;
 
 @Component
 @RequiredArgsConstructor
 public class RoutingCatalog {
 
     private final RoutingProperties properties;
+    private final BrokerRegistry brokers;
 
     @PostConstruct
     void validate() {
-        properties.getRoutes().values().forEach(route -> destination(route.getOutput()));
+        properties.getDestinations().values().forEach(this::broker);
+        properties.getRoutes().values().forEach(route -> {
+            brokers.requireJms(route.getBroker());
+            destination(route.getOutput());
+        });
     }
 
     public RoutingProperties.Route route(String id) {
@@ -29,5 +36,20 @@ public class RoutingCatalog {
             throw new IllegalArgumentException("Unknown destination: " + alias);
         }
         return destination;
+    }
+
+    public String broker(RoutingProperties.Destination destination) {
+        String broker = destination.getBroker();
+        if (broker == null) {
+            broker = switch (destination.getTransport()) {
+                case JMS -> BrokerIds.DEFAULT_MQ;
+                case KAFKA -> BrokerIds.DEFAULT_KAFKA;
+            };
+        }
+        switch (destination.getTransport()) {
+            case JMS -> brokers.requireJms(broker);
+            case KAFKA -> brokers.requireKafka(broker);
+        }
+        return broker;
     }
 }

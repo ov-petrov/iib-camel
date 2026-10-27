@@ -5,10 +5,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jms.annotation.EnableJms;
 import org.springframework.jms.annotation.JmsListenerConfigurer;
-import org.springframework.jms.config.DefaultJmsListenerContainerFactory;
 import org.springframework.jms.config.JmsListenerEndpointRegistrar;
 import org.springframework.jms.config.SimpleJmsListenerEndpoint;
 import ru.petrovov.iib_camel.runtime_lite.config.RoutingProperties;
+import ru.petrovov.iib_camel.runtime_lite.transport.BrokerRegistry;
 import ru.petrovov.iib_camel.runtime_lite.transport.JmsMessageReader;
 
 @Configuration(proxyBeanMethods = false)
@@ -19,7 +19,7 @@ class JmsRoutes implements JmsListenerConfigurer {
     private final RoutingProperties properties;
     private final MessageProcessingService processing;
     private final JmsMessageReader reader;
-    private final DefaultJmsListenerContainerFactory liteJmsListenerContainerFactory;
+    private final BrokerRegistry brokers;
 
     @Override
     public void configureJmsListeners(JmsListenerEndpointRegistrar registrar) {
@@ -36,7 +36,7 @@ class JmsRoutes implements JmsListenerConfigurer {
                     throw new IllegalStateException("Cannot read JMS message", failure);
                 }
             });
-            registrar.registerEndpoint(endpoint, liteJmsListenerContainerFactory);
+            registrar.registerEndpoint(endpoint, brokers.listenerFactory(route.getBroker()));
         });
     }
 }

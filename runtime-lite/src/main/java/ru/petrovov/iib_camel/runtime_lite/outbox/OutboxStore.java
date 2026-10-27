@@ -26,12 +26,12 @@ public class OutboxStore {
     private final JsonMapper json;
     private final DeliveryTables tables;
 
-    public UUID append(Transport transport, String destination, MessagePayload payload) {
+    public UUID append(Transport transport, String broker, String destination, MessagePayload payload) {
         UUID id = UUID.randomUUID();
         jdbc.update("INSERT INTO " + tables.outbox() + " " + """
-                (id, transport, destination, body, message_key, headers, status)
-                VALUES (?, ?, ?, ?, ?, CAST(? AS jsonb), ?)
-                """, id, transport.name(), destination, payload.body(), payload.key(),
+                (id, transport, broker_id, destination, body, message_key, headers, status)
+                VALUES (?, ?, ?, ?, ?, ?, CAST(? AS jsonb), ?)
+                """, id, transport.name(), broker, destination, payload.body(), payload.key(),
             json.writeValueAsString(payload.headers()), OutboxStatus.PENDING.name());
         return id;
     }
@@ -64,6 +64,6 @@ public class OutboxStore {
         var payload = new MessagePayload(row.getBytes("body"), row.getString("message_key"),
             json.readValue(row.getString("headers"), HEADERS_TYPE));
         return new OutboxMessage(row.getObject("id", UUID.class), Transport.valueOf(row.getString("transport")),
-            row.getString("destination"), payload, row.getInt("attempts"));
+            row.getString("broker_id"), row.getString("destination"), payload, row.getInt("attempts"));
     }
 }

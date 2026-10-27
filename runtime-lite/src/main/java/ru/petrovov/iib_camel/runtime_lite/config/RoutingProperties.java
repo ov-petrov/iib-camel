@@ -8,6 +8,7 @@ import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
+import ru.petrovov.iib_camel.runtime_lite.transport.BrokerIds;
 import ru.petrovov.iib_camel.runtime_lite.transport.Transport;
 
 import java.util.LinkedHashMap;
@@ -33,6 +34,9 @@ public class RoutingProperties {
         private String inputQueue;
 
         @NotBlank
+        private String broker = BrokerIds.DEFAULT_MQ;
+
+        @NotBlank
         private String processor;
 
         @NotBlank
@@ -48,6 +52,8 @@ public class RoutingProperties {
 
         @NotNull
         private Transport transport;
+
+        private String broker;
 
         @NotBlank
         private String name;

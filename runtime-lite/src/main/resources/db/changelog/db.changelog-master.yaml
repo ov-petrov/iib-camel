@@ -6,3 +6,10 @@ databaseChangeLog:
         - sqlFile:
             path: sql/001-delivery.sql
             relativeToChangelogFile: true
+  - changeSet:
+      id: runtime-lite-002
+      author: runtime-lite
+      changes:
+        - sqlFile:
+            path: sql/002-outbox-broker.sql
+            relativeToChangelogFile: true

@@ -19,6 +19,6 @@ public class MessagePublisher {
     @Transactional(propagation = Propagation.MANDATORY)
     public UUID send(String destination, MessagePayload payload) {
         var target = catalog.destination(destination);
-        return store.append(target.getTransport(), target.getName(), payload);
+        return store.append(target.getTransport(), catalog.broker(target), target.getName(), payload);
     }
 }

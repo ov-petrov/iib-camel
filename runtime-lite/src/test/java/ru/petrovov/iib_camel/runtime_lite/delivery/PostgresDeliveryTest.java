@@ -67,7 +67,27 @@ import static org.awaitility.Awaitility.await;
     "runtime-lite.destinations.result.transport=KAFKA",
     "runtime-lite.destinations.result.name=demo.result",
     "runtime-lite.destinations.extra.transport=JMS",
-    "runtime-lite.destinations.extra.name=DEMO.EXTRA"
+    "runtime-lite.destinations.extra.name=DEMO.EXTRA",
+    "runtime-lite.transports.mq.mq-a.host=localhost",
+    "runtime-lite.transports.mq.mq-a.queue-manager=QM.A",
+    "runtime-lite.transports.mq.mq-a.channel=SYNTHETIC.CHANNEL",
+    "runtime-lite.transports.mq.mq-b.host=localhost",
+    "runtime-lite.transports.mq.mq-b.queue-manager=QM.B",
+    "runtime-lite.transports.mq.mq-b.channel=SYNTHETIC.CHANNEL",
+    "runtime-lite.transports.kafka.kafka-a.bootstrap-servers=localhost:19092",
+    "runtime-lite.transports.kafka.kafka-b.bootstrap-servers=localhost:29092",
+    "runtime-lite.destinations.mq-a.transport=JMS",
+    "runtime-lite.destinations.mq-a.broker=mq-a",
+    "runtime-lite.destinations.mq-a.name=SYNTHETIC.OUTPUT",
+    "runtime-lite.destinations.mq-b.transport=JMS",
+    "runtime-lite.destinations.mq-b.broker=mq-b",
+    "runtime-lite.destinations.mq-b.name=SYNTHETIC.OUTPUT",
+    "runtime-lite.destinations.kafka-a.transport=KAFKA",
+    "runtime-lite.destinations.kafka-a.broker=kafka-a",
+    "runtime-lite.destinations.kafka-a.name=synthetic.output",
+    "runtime-lite.destinations.kafka-b.transport=KAFKA",
+    "runtime-lite.destinations.kafka-b.broker=kafka-b",
+    "runtime-lite.destinations.kafka-b.name=synthetic.output"
 })
 @Import(PostgresDeliveryTest.Fixtures.class)
 @EnabledIfEnvironmentVariable(named = "IIB_LITE_TEST_POSTGRES_URL", matches = ".+")
@@ -151,6 +171,27 @@ class PostgresDeliveryTest {
         assertThat(jdbc.queryForObject("SELECT message_key FROM " + tables.outbox() + " WHERE transport = ?",
             String.class, Transport.KAFKA.name())).isEqualTo("A");
         assertThat(sender.calls).isEmpty();
+    }
+
+    @Test
+    void preservesTheSelectedBrokerAlongsideAnOtherwiseIdenticalDestination() {
+        outboxTransaction.executeWithoutResult(status -> {
+            publisher.send("mq-a", MessagePayload.of(bytes("mq-a")));
+            publisher.send("mq-b", MessagePayload.of(bytes("mq-b")));
+            publisher.send("kafka-a", MessagePayload.of(bytes("kafka-a")));
+            publisher.send("kafka-b", MessagePayload.of(bytes("kafka-b")));
+        });
+
+        assertThat(count(tables.outbox())).isEqualTo(4);
+        assertThat(dispatcher.dispatchBatch()).isEqualTo(4);
+        assertThat(sender.calls).hasSize(4).allSatisfy(message -> {
+            String name = new String(message.payload().body(), StandardCharsets.UTF_8);
+            assertThat(message.broker()).isEqualTo(name);
+            assertThat(message.destination()).isEqualTo(name.startsWith("mq-")
+                ? "SYNTHETIC.OUTPUT" : "synthetic.output");
+            assertThat(message.transport()).isEqualTo(name.startsWith("mq-") ? Transport.JMS : Transport.KAFKA);
+            assertThat(status(message.id())).isEqualTo(OutboxStatus.SENT);
+        });
     }
 
     @Test
