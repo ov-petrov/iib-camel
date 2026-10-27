@@ -34,6 +34,7 @@
   <modules>
     <module>converter</module>
     <module>runtime</module>
+    <module>runtime-lite</module>
     <module>compatibility-tests</module>
   </modules>
 

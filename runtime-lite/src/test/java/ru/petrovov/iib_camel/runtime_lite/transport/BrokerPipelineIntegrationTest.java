@@ -1,0 +1,225 @@
+package ru.petrovov.iib_camel.runtime_lite.transport;
+
+import jakarta.jms.ConnectionFactory;
+import jakarta.jms.JMSContext;
+import lombok.RequiredArgsConstructor;
+import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.NewTopic;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.serialization.ByteArrayDeserializer;
+import org.apache.kafka.common.serialization.StringDeserializer;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jms.config.JmsListenerEndpointRegistry;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import ru.petrovov.iib_camel.runtime_lite.RuntimeLiteApplication;
+import ru.petrovov.iib_camel.runtime_lite.jdbc.DeliveryTables;
+import ru.petrovov.iib_camel.runtime_lite.message.InboundMessage;
+import ru.petrovov.iib_camel.runtime_lite.message.MessagePayload;
+import ru.petrovov.iib_camel.runtime_lite.outbox.MessagePublisher;
+import ru.petrovov.iib_camel.runtime_lite.outbox.OutboxDispatcher;
+import ru.petrovov.iib_camel.runtime_lite.outbox.OutboxStatus;
+import ru.petrovov.iib_camel.runtime_lite.processor.MessageProcessor;
+import tools.jackson.dataformat.xml.XmlMapper;
+
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.Locale;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
+
+@SpringBootTest(classes = RuntimeLiteApplication.class, properties = {
+    "runtime-lite.outbox.scheduling-enabled=false",
+    "runtime-lite.routes.broker.processor=brokerTestProcessor",
+    "runtime-lite.routes.broker.output=result",
+    "runtime-lite.destinations.result.transport=KAFKA",
+    "runtime-lite.destinations.extra.transport=JMS"
+})
+@Import(BrokerPipelineIntegrationTest.Fixtures.class)
+@EnabledIfEnvironmentVariable(named = "IIB_LITE_TEST_BROKERS", matches = "true")
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+class BrokerPipelineIntegrationTest {
+
+    private static final String SCHEMA = "lite_broker_" + UUID.randomUUID().toString().replace("-", "");
+    private static final String TOPIC = "lite-broker-" + UUID.randomUUID();
+    private static final String KAFKA = environment("IIB_LITE_TEST_KAFKA", "localhost:59092");
+
+    @Autowired
+    private JdbcTemplate jdbc;
+
+    @Autowired
+    private DeliveryTables tables;
+
+    @Autowired
+    private ConnectionFactory connectionFactory;
+
+    @Autowired
+    private OutboxDispatcher dispatcher;
+
+    @Autowired
+    private JmsListenerEndpointRegistry listeners;
+
+    @Autowired
+    private BrokerTestProcessor processor;
+
+    @Autowired
+    private JmsMessageReader reader;
+
+    @Autowired
+    private XmlMapper xmlMapper;
+
+    @DynamicPropertySource
+    static void connections(DynamicPropertyRegistry registry) {
+        String inputQueue = dedicatedQueue("IIB_LITE_TEST_MQ_INPUT_QUEUE");
+        String outputQueue = dedicatedQueue("IIB_LITE_TEST_MQ_OUTPUT_QUEUE");
+        if (inputQueue.equals(outputQueue)) {
+            throw new IllegalArgumentException("The test requires separate input and output queues");
+        }
+        registry.add("spring.datasource.url", () -> System.getenv("IIB_LITE_TEST_POSTGRES_URL"));
+        registry.add("spring.datasource.username", () -> System.getenv("IIB_LITE_TEST_POSTGRES_USER"));
+        registry.add("spring.datasource.password", () -> System.getenv("IIB_LITE_TEST_POSTGRES_PASSWORD"));
+        registry.add("runtime-lite.outbox.schema", () -> SCHEMA);
+        registry.add("runtime-lite.mq.host", () -> environment("IIB_LITE_TEST_MQ_HOST", "localhost"));
+        registry.add("runtime-lite.mq.port", () -> environment("IIB_LITE_TEST_MQ_PORT", "51414"));
+        registry.add("runtime-lite.mq.queue-manager", () -> environment("IIB_LITE_TEST_MQ_MANAGER", "QM1"));
+        registry.add("runtime-lite.mq.channel", () -> environment("IIB_LITE_TEST_MQ_CHANNEL", "DEV.APP.SVRCONN"));
+        registry.add("runtime-lite.mq.username", () -> environment("IIB_LITE_TEST_MQ_USER", "app"));
+        registry.add("runtime-lite.mq.password", () -> environment("IIB_LITE_TEST_MQ_PASSWORD", "lite_test"));
+        registry.add("runtime-lite.kafka.bootstrap-servers", () -> KAFKA);
+        registry.add("runtime-lite.destinations.result.name", () -> TOPIC);
+        registry.add("runtime-lite.routes.broker.input-queue", () -> inputQueue);
+        registry.add("runtime-lite.destinations.extra.name", () -> outputQueue);
+    }
+
+    @Test
+    void redeliversFailedInputAndPublishesOnlyCommittedOutputs() throws Exception {
+        try (var admin = AdminClient.create(Map.of("bootstrap.servers", KAFKA))) {
+            admin.createTopics(List.of(new NewTopic(TOPIC, 1, (short) 1))).all().get(15, TimeUnit.SECONDS);
+        }
+        var consumerProperties = Map.<String, Object>of(
+            ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, KAFKA,
+            ConsumerConfig.GROUP_ID_CONFIG, "lite-test-" + UUID.randomUUID(),
+            ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest",
+            ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false,
+            ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class,
+            ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class);
+        try (var consumer = new KafkaConsumer<String, byte[]>(consumerProperties);
+             var context = connectionFactory.createContext(JMSContext.AUTO_ACKNOWLEDGE);
+             var mqOutput = context.createConsumer(context.createQueue(dedicatedQueue("IIB_LITE_TEST_MQ_OUTPUT_QUEUE")))) {
+            consumer.subscribe(List.of(TOPIC));
+            var input = context.createTextMessage("<XmlValue><value>synthetic</value></XmlValue>");
+            input.setStringProperty("sample_header", "sample_value");
+            input.setJMSCorrelationID("synthetic-correlation");
+            context.createProducer().send(context.createQueue(dedicatedQueue("IIB_LITE_TEST_MQ_INPUT_QUEUE")), input);
+
+            await().atMost(Duration.ofSeconds(30)).untilAsserted(() -> {
+                assertThat(processor.invocations).hasValue(2);
+                assertThat(jdbc.queryForObject("SELECT count(*) FROM " + tables.outbox(), Integer.class)).isEqualTo(2);
+            });
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM " + tables.receipts(), Integer.class)).isEqualTo(1);
+            assertThat(jdbc.queryForList("SELECT status FROM " + tables.outbox(), String.class))
+                .containsOnly(OutboxStatus.PENDING.name());
+            assertThat(mqOutput.receiveNoWait()).isNull();
+
+            assertThat(dispatcher.dispatchBatch()).isEqualTo(2);
+
+            var delivered = mqOutput.receive(10000);
+            assertThat(delivered).isNotNull();
+            var mqMessage = reader.read(delivered);
+            assertThat(xmlMapper.readValue(mqMessage.body(), XmlValue.class)).isEqualTo(new XmlValue("SYNTHETIC"));
+            assertThat(mqMessage.headers()).containsEntry("sample_header", "sample_value")
+                .containsEntry(MessageHeaders.CORRELATION_ID, "synthetic-correlation");
+            assertThat(mqMessage.headers().get(MessageHeaders.MESSAGE_ID)).isEqualTo(deliveryId(Transport.JMS));
+            assertThat(mqOutput.receive(300)).isNull();
+
+            var records = new ArrayList<org.apache.kafka.clients.consumer.ConsumerRecord<String, byte[]>>();
+            await().atMost(Duration.ofSeconds(20)).until(() -> {
+                consumer.poll(Duration.ofMillis(200)).forEach(records::add);
+                return !records.isEmpty();
+            });
+            assertThat(records).singleElement().satisfies(record -> {
+                assertThat(record.key()).isEqualTo("synthetic");
+                assertThat(xmlMapper.readValue(record.value(), XmlValue.class)).isEqualTo(new XmlValue("SYNTHETIC"));
+                assertThat(new String(record.headers().lastHeader(MessageHeaders.MESSAGE_ID).value(), StandardCharsets.UTF_8))
+                    .isEqualTo(deliveryId(Transport.KAFKA));
+            });
+            assertThat(jdbc.queryForList("SELECT status FROM " + tables.outbox(), String.class))
+                .containsOnly(OutboxStatus.SENT.name());
+        }
+    }
+
+    private String deliveryId(Transport transport) {
+        return jdbc.queryForObject("SELECT id FROM " + tables.outbox() + " WHERE transport = ?",
+            UUID.class, transport.name()).toString();
+    }
+
+    @AfterAll
+    void cleanup() throws Exception {
+        listeners.stop();
+        jdbc.execute("DROP SCHEMA " + SCHEMA + " CASCADE");
+        try (var admin = AdminClient.create(Map.of("bootstrap.servers", KAFKA))) {
+            admin.deleteTopics(List.of(TOPIC)).all().get(10, TimeUnit.SECONDS);
+        }
+    }
+
+    private static String environment(String name, String fallback) {
+        return System.getenv().getOrDefault(name, fallback);
+    }
+
+    private static String dedicatedQueue(String name) {
+        var queue = System.getenv(name);
+        if (queue == null || queue.isBlank()) {
+            throw new IllegalStateException(name + " must name an empty queue dedicated to this test");
+        }
+        return queue;
+    }
+
+    @TestConfiguration(proxyBeanMethods = false)
+    static class Fixtures {
+
+        @Bean
+        BrokerTestProcessor brokerTestProcessor(MessagePublisher publisher, XmlMapper xmlMapper) {
+            return new BrokerTestProcessor(publisher, xmlMapper);
+        }
+    }
+
+    @RequiredArgsConstructor
+    static class BrokerTestProcessor implements MessageProcessor {
+
+        private final MessagePublisher publisher;
+        private final XmlMapper xmlMapper;
+        private final AtomicInteger invocations = new AtomicInteger();
+
+        @Override
+        public MessagePayload process(InboundMessage message) {
+            var input = xmlMapper.readValue(message.body(), XmlValue.class);
+            var result = new XmlValue(input.value().toUpperCase(Locale.ROOT));
+            var payload = new MessagePayload(xmlMapper.writeValueAsBytes(result), "synthetic", message.headers());
+            publisher.send("extra", payload);
+            if (invocations.incrementAndGet() == 1) {
+                throw new IllegalStateException("Synthetic transient processing failure");
+            }
+            return payload;
+        }
+    }
+
+    public record XmlValue(String value) {
+    }
+}

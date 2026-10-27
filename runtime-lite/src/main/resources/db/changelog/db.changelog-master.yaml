@@ -1,0 +1,8 @@
+databaseChangeLog:
+  - changeSet:
+      id: runtime-lite-001
+      author: runtime-lite
+      changes:
+        - sqlFile:
+            path: sql/001-delivery.sql
+            relativeToChangelogFile: true

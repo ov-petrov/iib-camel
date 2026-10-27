@@ -15,13 +15,12 @@ This is an experimental migration aid, not a complete IIB/ACE parser or a produc
 
 ## Architecture
 
-The repository contains two independent projects. The Java 25 converter analyzes IIB/ACE inputs and generates artifacts
-for a supported subset. The Java 21 runtime is a separate Spring Boot and Camel application for manually assembled
-integrations; generated converter output is not loaded into it automatically. Business behavior, including ESQL
-transformations, must be reviewed and implemented in runtime modules. The example module only passes message bytes
-through.
+The repository contains independent projects. The Java 25 converter analyzes IIB/ACE inputs and generates artifacts
+for a supported subset. The full Java 21 runtime uses Spring Boot and Camel. A separate Java 21 `runtime-lite` provides
+JMS input, Java processors, and a PostgreSQL outbox with JMS/Kafka outputs, without Camel. Neither runtime loads
+converter output automatically. Business behavior must be reviewed and implemented in Java modules.
 
-The root Maven reactor includes the converter, runtime, and compatibility-test projects. The runtime also has its own
+The root Maven reactor includes the converter, runtime, runtime-lite, and compatibility-test projects. The runtime also has its own
 parent POM and reactor under `runtime/`, which sets its Java 21 compiler target and manages its modules.
 
 | Module                                | Responsibility                                                                            |
@@ -31,6 +30,7 @@ parent POM and reactor under `runtime/`, which sets its Java 21 compiler target 
 | `runtime/runtime-delivery/`           | PostgreSQL inbox/outbox delivery services and persistence.                                |
 | `runtime/modules/example-module/`     | Example Java handler and manually authored Camel XML route; passes payload bytes through. |
 | `runtime/runtime-app/`                | Boot executable that wires the runtime libraries and integration modules.                 |
+| `runtime-lite/`                       | Standalone Spring Boot JMS runtime with inbox/outbox and JMS/Kafka outputs.                |
 | `compatibility-tests/legacy-runtime/` | Java 25 test-only environment for generated-artifact converter regression tests.          |
 | `examples/analyze/`, `docs/`          | Illustrative analysis inputs, requirements, and migration guidance.                       |
 
@@ -54,15 +54,25 @@ flowchart TB
         example -.-> delivery
         delivery -.-> core
     end
+    subgraph runtime_lite_project["Runtime Lite · Java 21"]
+        direction TB
+        jms["JMS input"] --> processor["MessageProcessor"]
+        processor --> outbox["PostgreSQL outbox"]
+        publisher["MessagePublisher"] --> outbox
+        outbox --> senders["JMS / Kafka"]
+    end
 ```
 
-Dashed arrows show Maven dependencies. The converter and runtime have no dependency or automatic artifact handoff
-between them. See the [runtime guide](runtime/README.ru.md) for its module model, configuration, delivery behavior, and
-startup instructions.
+Dashed arrows show Maven dependencies within the full runtime. Runtime Lite and the converter build independently, with
+no automatic artifact handoff between them. See the [runtime guide](runtime/README.ru.md) for the full runtime's module
+model, configuration, delivery behavior, and startup instructions.
+
+See the separate [Runtime Lite guide (RU)](runtime-lite/README.ru.md) for processor registration, configuration, build,
+delivery behavior, and current limits.
 
 ## Build
 
-Requirements: Maven 3.9 or newer, JDK 25 for the converter and compatibility tests, and JDK 21 for the runtime.
+Requirements: Maven 3.9 or newer, JDK 25 for the converter and compatibility tests, and JDK 21 for both runtimes.
 
 Build the converter and its legacy compatibility tests from the repository root:
 
@@ -74,6 +84,12 @@ Build the independent runtime from its own parent project:
 
 ```sh
 mvn -B -f runtime/pom.xml verify
+```
+
+Build JMS Runtime Lite independently:
+
+```sh
+mvn -B -f runtime-lite/pom.xml verify
 ```
 
 The converter JAR is created at `converter/target/converter.jar`. Runtime requirements, startup, offline operation, PostgreSQL delivery, and transport settings are described in [runtime documentation](runtime/README.ru.md).
@@ -114,6 +130,7 @@ Generated artifacts are written to the selected output directory. Review the com
 - [Functional requirements](docs/functional-requirements.en.md)
 - [Testing strategy](docs/test-strategy.en.md)
 - [Implementation progress (RU)](docs/implementation-progress.ru.md)
+- [Runtime Lite guide (RU)](runtime-lite/README.ru.md)
 - [Manual analysis examples (RU)](examples/analyze/README.ru.md)
 
 ## License

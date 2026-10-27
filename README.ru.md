@@ -15,13 +15,12 @@
 
 ## Архитектура
 
-В репозитории находятся два независимых проекта. Конвертер на Java 25 анализирует входы IIB/ACE и генерирует артефакты
-для поддерживаемого подмножества. Runtime на Java 21 — отдельное приложение Spring Boot и Camel для интеграций,
-собираемых вручную; сгенерированные конвертером артефакты не загружаются в него автоматически. Бизнес-поведение, включая
-преобразования ESQL, нужно проверить и реализовать в модулях runtime. Примерный модуль только передаёт байты сообщения
-дальше.
+В репозитории находятся независимые проекты. Конвертер на Java 25 анализирует входы IIB/ACE и генерирует артефакты
+для поддерживаемого подмножества. Полный runtime на Java 21 использует Spring Boot и Camel; отдельный `runtime-lite` на
+Java 21 реализует JMS-вход, Java-обработчики и PostgreSQL outbox с JMS/Kafka-выходами без Camel. Ни один runtime не
+загружает результат конвертера автоматически. Бизнес-поведение нужно проверить и реализовать в Java-модулях.
 
-Корневой Maven reactor включает конвертер, runtime и проект compatibility-тестов. У runtime также есть собственный
+Корневой Maven reactor включает конвертер, runtime, runtime-lite и проект compatibility-тестов. У runtime также есть собственный
 родительский POM и reactor в каталоге `runtime/`, который задаёт требования к Java 21 и управляет модулями.
 
 | Модуль                                | Ответственность                                                                                         |
@@ -31,6 +30,7 @@
 | `runtime/runtime-delivery/`           | Сервисы и хранение inbox/outbox в PostgreSQL.                                                           |
 | `runtime/modules/example-module/`     | Пример Java-обработчика и вручную заданного Camel XML-маршрута; передаёт байты сообщения без изменений. |
 | `runtime/runtime-app/`                | Исполняемое приложение Boot, связывающее библиотеки runtime и модули интеграций.                        |
+| `runtime-lite/`                       | Самостоятельный Spring Boot JMS runtime с inbox/outbox и выходами JMS/Kafka.                              |
 | `compatibility-tests/legacy-runtime/` | Тестовое окружение на Java 25 только для регрессионных проверок артефактов конвертера.                  |
 | `examples/analyze/`, `docs/`          | Иллюстративные входы для анализа, требования и руководство по миграции.                                 |
 
@@ -54,15 +54,25 @@ flowchart TB
         example -.-> delivery
         delivery -.-> core
     end
+    subgraph runtime_lite_project["Runtime Lite · Java 21"]
+        direction TB
+        jms["JMS input"] --> processor["MessageProcessor"]
+        processor --> outbox["PostgreSQL outbox"]
+        publisher["MessagePublisher"] --> outbox
+        outbox --> senders["JMS / Kafka"]
+    end
 ```
 
-Пунктирные стрелки показывают Maven-зависимости. Между конвертером и runtime нет зависимости или автоматической передачи
-артефактов. Описание модели модулей runtime, настроек, доставки и запуска приведено
+Пунктирные стрелки показывают Maven-зависимости внутри полного runtime. Runtime Lite и конвертер собираются независимо;
+автоматической передачи артефактов между ними нет. Описание полного runtime, настроек, доставки и запуска приведено
 в [руководстве runtime](runtime/README.ru.md).
+
+Runtime Lite имеет отдельное [краткое руководство](runtime-lite/README.ru.md), включая объявление обработчика,
+конфигурацию, сборку и границы доставки.
 
 ## Сборка
 
-Требуются Maven 3.9 или новее, JDK 25 для конвертера и compatibility-тестов, JDK 21 для runtime.
+Требуются Maven 3.9 или новее, JDK 25 для конвертера и compatibility-тестов, JDK 21 для runtime и runtime-lite.
 
 Собрать конвертер и compatibility-тесты legacy runtime из корня репозитория:
 
@@ -74,6 +84,12 @@ mvn -B -f pom.xml -pl converter,compatibility-tests/legacy-runtime -am verify
 
 ```sh
 mvn -B -f runtime/pom.xml verify
+```
+
+Собрать JMS Runtime Lite независимо:
+
+```sh
+mvn -B -f runtime-lite/pom.xml verify
 ```
 
 Сборка создаёт JAR конвертера `converter/target/converter.jar`. Требования к новому runtime, запуск, offline-режим, доставка через PostgreSQL и настройки транспортов описаны в [руководстве runtime](runtime/README.ru.md).
@@ -114,6 +130,7 @@ java -jar converter/target/converter.jar convert \
 - [Функциональные требования](docs/functional-requirements.ru.md)
 - [Стратегия тестирования](docs/test-strategy.ru.md)
 - [Ход реализации](docs/implementation-progress.ru.md)
+- [Runtime Lite](runtime-lite/README.ru.md)
 - [Ручная проверка анализа](examples/analyze/README.ru.md)
 
 ## Лицензия
