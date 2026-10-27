@@ -4,6 +4,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
+import org.springframework.core.io.ResourceLoader;
+import ru.petrovov.iib_camel.runtime_lite.xml.schema.XmlSchemaRegistry;
+import ru.petrovov.iib_camel.runtime_lite.xml.schema.XmlSchemaValidator;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.dataformat.xml.XmlFactory;
 import tools.jackson.dataformat.xml.XmlMapper;
@@ -13,6 +16,24 @@ import javax.xml.stream.XMLStreamException;
 
 @Configuration(proxyBeanMethods = false)
 public class XmlConfiguration {
+
+    @Bean
+    @ConditionalOnMissingBean(XmlSchemaRegistry.class)
+    XmlSchemaRegistry xmlSchemaRegistry(ResourceLoader resourceLoader) {
+        return new XmlSchemaRegistry(resourceLoader);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(XmlSchemaValidator.class)
+    XmlSchemaValidator xmlSchemaValidator(XmlSchemaRegistry registry) {
+        return new XmlSchemaValidator(registry);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(XmlService.class)
+    XmlService xmlService(XmlMapper xmlMapper, XmlSchemaValidator validator) {
+        return new XmlService(xmlMapper, validator);
+    }
 
     @Bean
     @ConditionalOnMissingBean(XmlMapper.class)

@@ -33,6 +33,42 @@ public class SampleProcessor implements MessageProcessor {
 преобразования моделей доступны MapStruct и Lombok; их совместная обработка аннотаций настроена в Maven. Компоненты
 размещайте внутри пакета `ru.petrovov.iib_camel.runtime_lite` или явно добавьте свои пакеты в сканирование Spring.
 
+## Работа с XML и XSD
+
+Spring предоставляет `XmlService` для определения корня документа, преобразования XML в DTO и обратно. Проверка по
+XSD выбирается явно для каждого вызова. Схемы располагаются в ресурсах приложения и задаются путём `classpath:`;
+скомпилированные схемы повторно используются. XML разбирается из байтов с учётом его кодировки. Например:
+
+```java
+QName root = xmlService.detectRoot(message.body());
+
+SampleRequest request = xmlService.readValidated(
+    message.body(),
+    "classpath:schemas/sample/request.xsd",
+    SampleRequest.class
+);
+
+SampleResponse response = handle(request);
+byte[] output = xmlService.writeValidated(response, "classpath:schemas/sample/response.xsd");
+return MessagePayload.of(output);
+```
+
+Пример показывает вызовы внутри `MessageProcessor`: `XmlService` внедряется как Spring-зависимость, а DTO, схемы и
+метод `handle` определяются конкретной интеграцией. Для формата без XSD используются `read(bytes, Dto.class)` и
+`write(dto)`. Для настройки сериализации можно получить `ObjectWriter` вызовом `writerFor(Dto.class)` и передать его
+в `write(dto, writer)` или `writeValidated(dto, writer, schemaLocation)`.
+
+`detectRoot` возвращает `QName`: сравнивайте локальное имя и URI namespace, а не строковый префикс. При чтении без XSD
+сервис проверяет корректность XML, но не подтверждает соответствие внешнему контракту. Для обязательной схемы ошибка её
+загрузки или проверки не приводит к пропуску валидации. Значения по умолчанию, заданные XSD, при раздельной проверке
+и десериализации исходных байтов автоматически в DTO не добавляются.
+
+Сервис запрещает DTD и внешние XML-сущности. XSD подключается только из classpath, а разрешённые локальные зависимости
+схемы должны находиться рядом с корневой схемой или в её подкаталогах. Сетевые и произвольные файловые ссылки не
+загружаются. Jackson не проверяет все особенности XML-схем и не гарантирует проверку namespace при десериализации;
+для форматов без XSD нужные ограничения и namespace следует проверять явно. При ошибке процессора транзакция
+откатывается, дальнейшая повторная доставка зависит от настроек брокера.
+
 ## Конфигурация
 
 Минимальный пример использует только синтетические идентификаторы:

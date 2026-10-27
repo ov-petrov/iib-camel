@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:common="urn:example:common"
+           targetNamespace="urn:example:import" xmlns="urn:example:import" elementFormDefault="qualified">
+    <xs:import namespace="urn:example:common" schemaLocation="shared/common.xsd"/>
+    <xs:element name="request" type="common:Identifier"/>
+</xs:schema>
