@@ -1,6 +1,7 @@
 package ru.petrovov.iib_camel.runtime_lite.jdbc;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.liquibase.autoconfigure.LiquibaseProperties;
 import org.springframework.stereotype.Component;
 import ru.petrovov.iib_camel.runtime_lite.config.OutboxProperties;
 
@@ -8,9 +9,9 @@ import ru.petrovov.iib_camel.runtime_lite.config.OutboxProperties;
 public record DeliveryTables(String schema) {
 
     @Autowired
-    public DeliveryTables(OutboxProperties properties) {
-        this(properties.getSchema());
-        properties.validateDurations();
+    public DeliveryTables(LiquibaseProperties liquibase, OutboxProperties outbox) {
+        this(liquibase.getDefaultSchema());
+        outbox.validateDurations();
     }
 
     public DeliveryTables {

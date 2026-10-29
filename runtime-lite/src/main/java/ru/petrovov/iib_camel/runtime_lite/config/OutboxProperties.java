@@ -2,7 +2,6 @@ package ru.petrovov.iib_camel.runtime_lite.config;
 
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Pattern;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -15,10 +14,6 @@ import java.time.Duration;
 @Validated
 @ConfigurationProperties("runtime-lite.outbox")
 public class OutboxProperties {
-
-    @NotNull
-    @Pattern(regexp = "[a-z_][a-z0-9_]{0,62}")
-    private String schema = "runtime_lite";
 
     @Min(1)
     private int batchSize = 20;

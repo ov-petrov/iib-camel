@@ -15,8 +15,6 @@ import org.springframework.validation.annotation.Validated;
 @ConfigurationProperties("runtime-lite.mq")
 public class MqProperties {
 
-    private boolean enabled = true;
-
     @NotBlank
     private String host = "localhost";
 

@@ -1,6 +1,7 @@
 package ru.petrovov.iib_camel.runtime_lite.delivery;
 
 import lombok.RequiredArgsConstructor;
+import liquibase.integration.spring.SpringLiquibase;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,6 +21,7 @@ import org.springframework.data.relational.core.mapping.Table;
 import org.springframework.data.repository.CrudRepository;
 import org.springframework.data.repository.query.Param;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.IllegalTransactionStateException;
@@ -55,35 +57,25 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
-@SpringBootTest(classes = RuntimeLiteApplication.class, properties = {
-    "runtime-lite.listeners.auto-startup=false",
-    "runtime-lite.outbox.scheduling-enabled=false",
-    "runtime-lite.routes.sample.input-queue=DEMO.IN",
-    "runtime-lite.routes.sample.processor=sampleProcessor",
-    "runtime-lite.routes.sample.output=result",
-    "runtime-lite.routes.other.input-queue=DEMO.OTHER.IN",
-    "runtime-lite.routes.other.processor=sampleProcessor",
-    "runtime-lite.routes.other.output=result",
-    "runtime-lite.destinations.result.transport=KAFKA",
-    "runtime-lite.destinations.result.name=demo.result",
-    "runtime-lite.destinations.extra.transport=JMS",
-    "runtime-lite.destinations.extra.name=DEMO.EXTRA"
-})
+@SpringBootTest(classes = RuntimeLiteApplication.class)
+@ActiveProfiles({"test", "db-test"})
 @Import(PostgresDeliveryTest.Fixtures.class)
 @EnabledIfEnvironmentVariable(named = "IIB_LITE_TEST_POSTGRES_URL", matches = ".+")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class PostgresDeliveryTest {
 
     private static final String DELIVERY_SCHEMA = "lite_test_" + UUID.randomUUID().toString().replace("-", "");
-    private static final String BUSINESS_SCHEMA = "lite_business_" + UUID.randomUUID().toString().replace("-", "");
-    private static final String BUSINESS_TABLE = BUSINESS_SCHEMA + ".processed_item";
-    private static final String REFERENCE_TABLE = BUSINESS_SCHEMA + ".reference_item";
+    private static final String BUSINESS_TABLE = "processed_item";
+    private static final String REFERENCE_TABLE = "reference_item";
 
     @Autowired
     private JdbcTemplate jdbc;
 
     @Autowired
     private DeliveryTables tables;
+
+    @Autowired
+    private SpringLiquibase liquibase;
 
     @Autowired
     private MessageProcessingService processing;
@@ -104,19 +96,18 @@ class PostgresDeliveryTest {
     private SampleProcessor processor;
 
     @Autowired
+    private ReferenceRepository references;
+
+    @Autowired
     private RecordingSender sender;
 
     @DynamicPropertySource
     static void database(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", () -> System.getenv("IIB_LITE_TEST_POSTGRES_URL"));
-        registry.add("spring.datasource.username", () -> System.getenv("IIB_LITE_TEST_POSTGRES_USER"));
-        registry.add("spring.datasource.password", () -> System.getenv("IIB_LITE_TEST_POSTGRES_PASSWORD"));
-        registry.add("runtime-lite.outbox.schema", () -> DELIVERY_SCHEMA);
+        registry.add("spring.liquibase.default-schema", () -> DELIVERY_SCHEMA);
     }
 
     @BeforeEach
     void reset() {
-        jdbc.execute("CREATE SCHEMA IF NOT EXISTS " + BUSINESS_SCHEMA);
         jdbc.execute("CREATE TABLE IF NOT EXISTS " + REFERENCE_TABLE + " (code TEXT PRIMARY KEY, label TEXT NOT NULL)");
         jdbc.execute("CREATE TABLE IF NOT EXISTS " + BUSINESS_TABLE + " (message_id TEXT, label TEXT NOT NULL)");
         jdbc.execute("ALTER TABLE " + tables.outbox() + " DROP CONSTRAINT IF EXISTS reject_sent");
@@ -133,9 +124,29 @@ class PostgresDeliveryTest {
     }
 
     @AfterAll
-    void removeSchemas() {
+    void removeSchema() {
         jdbc.execute("DROP SCHEMA " + DELIVERY_SCHEMA + " CASCADE");
-        jdbc.execute("DROP SCHEMA " + BUSINESS_SCHEMA + " CASCADE");
+    }
+
+    @Test
+    void usesOneSchemaForConnectionLiquibaseAndBusinessTables() {
+        assertThat(jdbc.queryForObject("SELECT current_schema()", String.class)).isEqualTo(DELIVERY_SCHEMA);
+        assertThat(jdbc.queryForList("""
+            SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = ?
+            """, String.class, DELIVERY_SCHEMA))
+            .contains("inbound_receipt", "outbox_message", "databasechangelog", "databasechangeloglock",
+                "reference_item", "processed_item");
+        assertThat(references.findById("A")).contains(new ReferenceItem("A", "Synthetic label"));
+    }
+
+    @Test
+    void liquibaseCanReopenExistingSchemaWithoutChangingMigrationHistory() throws Exception {
+        String checksum = jdbc.queryForObject("SELECT md5sum FROM databasechangelog", String.class);
+
+        liquibase.afterPropertiesSet();
+
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM databasechangelog", Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT md5sum FROM databasechangelog", String.class)).isEqualTo(checksum);
     }
 
     @Test
@@ -393,11 +404,6 @@ class PostgresDeliveryTest {
     static class Fixtures {
 
         @Bean
-        String testBusinessSchema() {
-            return BUSINESS_SCHEMA;
-        }
-
-        @Bean
         SampleProcessor sampleProcessor(ReferenceRepository references, JdbcTemplate jdbc, MessagePublisher publisher) {
             return new SampleProcessor(references, jdbc, publisher);
         }
@@ -409,7 +415,7 @@ class PostgresDeliveryTest {
         }
     }
 
-    @Table(name = "reference_item", schema = "#{@testBusinessSchema}")
+    @Table(name = "reference_item")
     record ReferenceItem(@Id String code, String label) {
     }
 

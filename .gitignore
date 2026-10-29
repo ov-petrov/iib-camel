@@ -45,3 +45,4 @@ testing-1/
 *.log
 
 /.private/
+/runtime-lite/PROGRESS.ru.md

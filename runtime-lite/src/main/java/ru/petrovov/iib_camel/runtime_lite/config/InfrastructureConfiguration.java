@@ -1,6 +1,9 @@
 package ru.petrovov.iib_camel.runtime_lite.config;
 
+import com.zaxxer.hikari.HikariDataSource;
 import liquibase.integration.spring.SpringLiquibase;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.liquibase.autoconfigure.LiquibaseProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.support.JdbcTransactionManager;
@@ -15,6 +18,7 @@ import java.sql.SQLException;
 import java.util.Map;
 
 @Configuration(proxyBeanMethods = false)
+@EnableConfigurationProperties(LiquibaseProperties.class)
 @EnableTransactionManagement
 @EnableScheduling
 public class InfrastructureConfiguration {
@@ -32,7 +36,14 @@ public class InfrastructureConfiguration {
     }
 
     @Bean
-    SpringLiquibase liquibase(DataSource dataSource, DeliveryTables tables) throws SQLException {
+    SpringLiquibase liquibase(HikariDataSource dataSource, DeliveryTables tables, LiquibaseProperties properties)
+        throws SQLException {
+        if (!tables.schema().equals(dataSource.getSchema())) {
+            throw new IllegalStateException("DataSource schema must match the Liquibase default schema");
+        }
+        if (properties.getLiquibaseSchema() != null && !tables.schema().equals(properties.getLiquibaseSchema())) {
+            throw new IllegalStateException("Liquibase schema must match the Liquibase default schema");
+        }
         try (var connection = dataSource.getConnection(); var statement = connection.createStatement()) {
             statement.execute("CREATE SCHEMA IF NOT EXISTS " + tables.schema());
         }

@@ -3,6 +3,7 @@ package ru.petrovov.iib_camel.runtime_lite.transport.config;
 import com.ibm.mq.jakarta.jms.MQConnectionFactory;
 import com.ibm.msg.client.jakarta.wmq.WMQConstants;
 import jakarta.jms.ConnectionFactory;
+import org.apache.activemq.artemis.jms.client.ActiveMQConnectionFactory;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
@@ -21,12 +22,13 @@ import ru.petrovov.iib_camel.runtime_lite.transport.MessageSender;
 import java.util.HashMap;
 
 @Configuration(proxyBeanMethods = false)
-@EnableConfigurationProperties({MqProperties.class, KafkaProducerProperties.class, ListenerProperties.class})
+@EnableConfigurationProperties({JmsProperties.class, MqProperties.class, ArtemisProperties.class,
+    KafkaProducerProperties.class, ListenerProperties.class})
 public class TransportConfiguration {
 
     @Bean
     @ConditionalOnMissingBean(ConnectionFactory.class)
-    @ConditionalOnProperty(prefix = "runtime-lite.mq", name = "enabled", havingValue = "true", matchIfMissing = true)
+    @ConditionalOnProperty(prefix = "runtime-lite.jms", name = "provider", havingValue = "IBM_MQ", matchIfMissing = true)
     ConnectionFactory liteConnectionFactory(MqProperties properties) throws Exception {
         var factory = new MQConnectionFactory();
         factory.setTransportType(WMQConstants.WMQ_CM_CLIENT);
@@ -44,6 +46,18 @@ public class TransportConfiguration {
             if (properties.getPeerName() != null) {
                 factory.setSSLPeerName(properties.getPeerName());
             }
+        }
+        return factory;
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(ConnectionFactory.class)
+    @ConditionalOnProperty(prefix = "runtime-lite.jms", name = "provider", havingValue = "ARTEMIS")
+    ConnectionFactory artemisConnectionFactory(ArtemisProperties properties) {
+        var factory = new ActiveMQConnectionFactory(properties.getBrokerUrl());
+        if (properties.getUsername() != null && !properties.getUsername().isBlank()) {
+            factory.setUser(properties.getUsername());
+            factory.setPassword(properties.getPassword());
         }
         return factory;
     }

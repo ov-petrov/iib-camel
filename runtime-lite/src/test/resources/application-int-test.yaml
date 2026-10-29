@@ -1,0 +1,30 @@
+spring:
+  datasource:
+    url: ${IIB_LITE_INT_POSTGRES_URL:jdbc:postgresql://localhost:5432/runtime_lite_test}
+    username: ${IIB_LITE_INT_POSTGRES_USER:runtime_lite_test}
+    password: ${IIB_LITE_INT_POSTGRES_PASSWORD:}
+
+runtime-lite:
+  jms:
+    provider: ARTEMIS
+  artemis:
+    broker-url: ${IIB_LITE_INT_ARTEMIS_URL:tcp://localhost:61616}
+    username: ${IIB_LITE_INT_ARTEMIS_USER:}
+    password: ${IIB_LITE_INT_ARTEMIS_PASSWORD:}
+  kafka:
+    bootstrap-servers: ${IIB_LITE_INT_KAFKA:localhost:9092}
+  outbox:
+    scheduling-enabled: true
+    poll-interval: 200ms
+  routes:
+    broker:
+      input-queue: ${IIB_LITE_INT_INPUT_QUEUE:LITE.TEST.IN}
+      processor: brokerTestProcessor
+      output: result
+  destinations:
+    result:
+      transport: KAFKA
+      name: ${integration-test.topic}
+    extra:
+      transport: JMS
+      name: ${IIB_LITE_INT_OUTPUT_QUEUE:LITE.TEST.OUT}

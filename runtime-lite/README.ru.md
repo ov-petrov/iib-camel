@@ -79,8 +79,14 @@ spring:
     url: jdbc:postgresql://localhost:5432/runtime_lite
     username: runtime_lite
     password: ${LITE_DB_PASSWORD}
+    hikari:
+      schema: ${spring.liquibase.default-schema}
+  liquibase:
+    default-schema: ${LITE_DB_SCHEMA:runtime_lite}
 
 runtime-lite:
+  jms:
+    provider: ${LITE_JMS_PROVIDER:IBM_MQ}
   mq:
     host: localhost
     port: 1414
@@ -88,6 +94,10 @@ runtime-lite:
     channel: DEV.APP.SVRCONN
     username: ${LITE_MQ_USER:}
     password: ${LITE_MQ_PASSWORD:}
+  artemis:
+    broker-url: ${LITE_ARTEMIS_URL:tcp://localhost:61616}
+    username: ${LITE_ARTEMIS_USER:}
+    password: ${LITE_ARTEMIS_PASSWORD:}
   kafka:
     bootstrap-servers: [localhost:9092]
     send-timeout: 30s
@@ -95,7 +105,6 @@ runtime-lite:
     auto-startup: true
     max-body-bytes: 10485760
   outbox:
-    schema: runtime_lite
     batch-size: 20
     max-attempts: 10
     retry-delay: 10s
@@ -115,7 +124,12 @@ runtime-lite:
       name: sample.audit
 ```
 
-Установите `LITE_DB_PASSWORD`, `LITE_MQ_USER` и `LITE_MQ_PASSWORD` через секрет-хранилище окружения. Не помещайте
+`runtime-lite.jms.provider` выбирает штатный JMS-провайдер: `IBM_MQ` или `ARTEMIS`. По умолчанию используется IBM MQ;
+для Artemis установите `LITE_JMS_PROVIDER=ARTEMIS`. Подключение Artemis задаётся через `LITE_ARTEMIS_URL`,
+`LITE_ARTEMIS_USER` и `LITE_ARTEMIS_PASSWORD`; имя пользователя и пароль задаются парой. Для IBM MQ используются
+настройки `runtime-lite.mq` и переменные `LITE_MQ_*`.
+
+Передавайте `LITE_DB_PASSWORD` и учётные данные выбранного брокера через секрет-хранилище окружения. Не помещайте
 секреты в YAML или репозиторий. IBM MQ принимает пару username/password; TLS настраивается `cipher-suite` и при
 необходимости `peer-name`. Для Kafka можно передать настройки производителя через `runtime-lite.kafka.properties`, в
 том числе параметры безопасности Kafka клиента. XML mapper отключает обработку DTD и внешних сущностей. Входное тело ограничено
@@ -129,12 +143,43 @@ runtime-lite:
 mvn -B -f runtime-lite/pom.xml verify
 ```
 
-Тесты PostgreSQL выполняются при заданных `IIB_LITE_TEST_POSTGRES_URL`, `IIB_LITE_TEST_POSTGRES_USER` и
-`IIB_LITE_TEST_POSTGRES_PASSWORD`. Без URL они пропускаются. Для сквозного теста дополнительно установите
-`IIB_LITE_TEST_BROKERS=true` и `IIB_LITE_TEST_MQ_INPUT_QUEUE` / `IIB_LITE_TEST_MQ_OUTPUT_QUEUE`.
-Используйте отдельные временные брокеры и выделенные пустые очереди: тест потребляет и подтверждает сообщения,
-создаёт и удаляет собственный временный Kafka topic. Адреса и учётные данные задаются через `IIB_LITE_TEST_MQ_*`
-и `IIB_LITE_TEST_KAFKA`.
+Обычный `verify` запускает доступные тесты. Тесты PostgreSQL включаются, когда заданы переменные
+`IIB_LITE_TEST_POSTGRES_URL`, `IIB_LITE_TEST_POSTGRES_USER` и `IIB_LITE_TEST_POSTGRES_PASSWORD`; без URL они
+пропускаются. Общие тестовые настройки находятся в `src/test/resources/application-test.yaml`, настройки тестов БД —
+в `application-db-test.yaml`.
+
+Для полного сквозного теста нужны PostgreSQL, Artemis и Kafka. Настройки подключения и имена двух отдельных очередей
+задаются в `runtime-lite/src/test/resources/application-int-test.yaml`: `spring.datasource.*`,
+`runtime-lite.jms.provider`, `runtime-lite.artemis.*`, `runtime-lite.kafka.bootstrap-servers`,
+`runtime-lite.routes.broker.input-queue` и `runtime-lite.destinations.extra.name`. Перед запуском укажите доступные
+тестовые сервисы и две выделенные пустые JMS-очереди; для Artemis это очереди ANYCAST. Настройки можно передать через
+`IIB_LITE_INT_POSTGRES_URL`, `IIB_LITE_INT_POSTGRES_USER`, `IIB_LITE_INT_POSTGRES_PASSWORD`,
+`IIB_LITE_INT_ARTEMIS_URL`, `IIB_LITE_INT_ARTEMIS_USER`, `IIB_LITE_INT_ARTEMIS_PASSWORD`, `IIB_LITE_INT_KAFKA`,
+`IIB_LITE_INT_INPUT_QUEUE` и `IIB_LITE_INT_OUTPUT_QUEUE`. Настоящие пароли в репозитории
+не храните: передавайте их через переменные окружения или другие локальные настройки Spring.
+
+Используйте выделенные тестовые брокеры и базу: тест потребляет и подтверждает сообщения из очередей, но не очищает
+их. Перед запуском listener он проверяет, что очереди разные и пустые. Он создаёт случайные изолированные схему
+PostgreSQL и Kafka topic и удаляет их после выполнения; учётным данным
+нужны права на создание и удаление. При аварийном завершении может потребоваться удалить оставшиеся ресурсы вручную.
+Тест проверяет откат первой обработки, повторную доставку и автоматическую отправку из outbox в Artemis и Kafka.
+Он не проверяет специфичные возможности IBM MQ.
+
+Запуск из корня репозитория в shell:
+
+```sh
+mvn -B -f runtime-lite/pom.xml -Pint-test verify
+```
+
+В Windows PowerShell:
+
+```powershell
+mvn -B -f runtime-lite/pom.xml -Pint-test verify
+```
+
+`-B` включает пакетный режим Maven, `-f` выбирает POM независимого проекта, `-Pint-test` включает Maven-профиль
+сквозного теста. Maven-профиль управляет запуском теста и активирует соответствующий Spring-профиль `int-test`;
+Spring загружает его настройки из `application-int-test.yaml` вместе с общими тестовыми настройками.
 
 После добавления обработчика и настроек запустите собранное приложение:
 
@@ -142,8 +187,19 @@ mvn -B -f runtime-lite/pom.xml verify
 java -jar runtime-lite/target/iib-camel-runtime-lite-0.0.1-SNAPSHOT.jar
 ```
 
-Таблицы `inbound_receipt` и `outbox_message` создаются Liquibase в настроенной схеме. Используйте отдельную схему для
-приложения: смена `runtime-lite.outbox.schema` не переносит данные из прежней схемы. Входной JMS message ID вместе с
+`spring.liquibase.default-schema` задаёт общую схему PostgreSQL для приложения; по умолчанию это `runtime_lite`.
+Её можно указать через `LITE_DB_SCHEMA` или стандартную настройку Spring. Пул Hikari устанавливает эту же схему
+для каждого соединения, поэтому обычные запросы без имени схемы и Spring Data JDBC используют её по умолчанию.
+Служебные запросы inbox/outbox дополнительно указывают схему явно. Liquibase создаёт в ней свои таблицы истории и
+блокировки, а также `inbound_receipt` и `outbox_message`. Явно указанная в SQL или отображении сущности другая схема
+сохраняет своё значение.
+
+Сервис создаёт схему при запуске, если её ещё нет; пользователю БД нужны необходимые права. Имя должно начинаться со
+строчной латинской буквы или `_` и содержать не более 63 строчных латинских букв, цифр и `_`. Не переопределяйте
+`spring.datasource.hikari.schema` или `spring.liquibase.liquibase-schema` отдельно: при несовпадении приложение не
+запустится. Смена схемы не переносит данные из прежней схемы.
+
+Входной JMS message ID вместе с
 ID маршрута образуют ключ идемпотентности. Inbox receipt, бизнес-изменения обработчика и все исходящие записи фиксируются
 одной транзакцией PostgreSQL. JMS listener использует транзакционную JMS session, но XA между JMS и БД не настроен:
 подтверждение JMS и транзакция БД не образуют общей атомарной транзакции.
@@ -174,8 +230,7 @@ WHERE id = '00000000-0000-4000-8000-000000000001' AND status = 'FAILED';
 ## Границы текущей реализации
 
 Реализация ограничена JMS-входом, простым Java `MessageProcessor` и выходами JMS/Kafka. Нет готовых бизнес-обработчиков,
-административного API для FAILED, очистки/архивации outbox, метрик и полноценной операционной панели. Для замены IBM MQ
-нужно отключить его фабрику через `runtime-lite.mq.enabled: false` и предоставить собственный Spring `ConnectionFactory`.
-Специализированная конфигурация, эксплуатационные
-настройки и полная поддержка Artemis не реализованы. Поведение необходимо проверить на целевых брокерах и схеме БД до
+административного API для FAILED, очистки/архивации outbox, метрик и полноценной операционной панели. Штатный выбор
+JMS-провайдера поддерживает IBM MQ и Artemis; специфичные возможности и настройки IBM MQ не переносятся автоматически
+на Artemis. Поведение необходимо проверить на целевых брокерах и схеме БД до
 эксплуатации.

@@ -1,0 +1,19 @@
+spring:
+  datasource:
+    url: ${IIB_LITE_TEST_POSTGRES_URL:}
+    username: ${IIB_LITE_TEST_POSTGRES_USER:}
+    password: ${IIB_LITE_TEST_POSTGRES_PASSWORD:}
+
+runtime-lite:
+  jms:
+    provider: IBM_MQ
+  mq:
+    username: ''
+    password: ''
+  artemis:
+    username: ''
+    password: ''
+  listeners:
+    auto-startup: false
+  outbox:
+    scheduling-enabled: false
