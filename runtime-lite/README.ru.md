@@ -83,6 +83,18 @@ spring:
       schema: ${spring.liquibase.default-schema}
   liquibase:
     default-schema: ${LITE_DB_SCHEMA:runtime_lite}
+  kafka:
+    bootstrap-servers: ${LITE_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.ByteArraySerializer
+      acks: all
+      properties:
+        '[enable.idempotence]': true
+        '[delivery.timeout.ms]': 30000
+        '[request.timeout.ms]': 30000
+        '[max.block.ms]': 30000
+        '[linger.ms]': 0
 
 runtime-lite:
   jms:
@@ -98,9 +110,6 @@ runtime-lite:
     broker-url: ${LITE_ARTEMIS_URL:tcp://localhost:61616}
     username: ${LITE_ARTEMIS_USER:}
     password: ${LITE_ARTEMIS_PASSWORD:}
-  kafka:
-    bootstrap-servers: [localhost:9092]
-    send-timeout: 30s
   listeners:
     auto-startup: true
     max-body-bytes: 10485760
@@ -131,9 +140,20 @@ runtime-lite:
 
 Передавайте `LITE_DB_PASSWORD` и учётные данные выбранного брокера через секрет-хранилище окружения. Не помещайте
 секреты в YAML или репозиторий. IBM MQ принимает пару username/password; TLS настраивается `cipher-suite` и при
-необходимости `peer-name`. Для Kafka можно передать настройки производителя через `runtime-lite.kafka.properties`, в
-том числе параметры безопасности Kafka клиента. XML mapper отключает обработку DTD и внешних сущностей. Входное тело ограничено
-`max-body-bytes`.
+необходимости `peer-name`. Kafka настраивается стандартными свойствами `spring.kafka`: общие параметры безопасности
+можно указать в `spring.kafka.properties` или через соответствующие настройки `spring.kafka.ssl` и
+`spring.kafka.security`; настройки только производителя — в `spring.kafka.producer`. Общие параметры доступны также
+тестовым Kafka consumer и AdminClient. XML mapper отключает обработку DTD и внешних сущностей. Входное тело
+ограничено `max-body-bytes`.
+
+Значения производителя в YAML можно изменить: приложение не перезаписывает их в Java-коде. `acks: all` требует
+подтверждения от всех синхронизированных реплик согласно настройкам брокера, а `enable.idempotence` защищает от
+дубликатов при повторных отправках внутри Kafka producer. Ожидание результата отправки завершается по результату
+Kafka-клиента; отдельного таймаута ожидания future нет. `max.block.ms` ограничивает блокировку при вызове отправки,
+а `delivery.timeout.ms`, `request.timeout.ms` и `linger.ms` управляют сроками доставки и запросов. Kafka требует,
+чтобы `delivery.timeout.ms` был не меньше суммы `request.timeout.ms` и `linger.ms`. Изменение этих настроек может
+ослабить гарантии доставки. Даже подтверждённое сообщение может быть отправлено повторно из outbox, поэтому
+потребителю нужна дедупликация по `integration_message_id`.
 
 ## Сборка и доставка
 
@@ -150,7 +170,7 @@ mvn -B -f runtime-lite/pom.xml verify
 
 Для полного сквозного теста нужны PostgreSQL, Artemis и Kafka. Настройки подключения и имена двух отдельных очередей
 задаются в `runtime-lite/src/test/resources/application-int-test.yaml`: `spring.datasource.*`,
-`runtime-lite.jms.provider`, `runtime-lite.artemis.*`, `runtime-lite.kafka.bootstrap-servers`,
+`runtime-lite.jms.provider`, `runtime-lite.artemis.*`, `spring.kafka.bootstrap-servers`,
 `runtime-lite.routes.broker.input-queue` и `runtime-lite.destinations.extra.name`. Перед запуском укажите доступные
 тестовые сервисы и две выделенные пустые JMS-очереди; для Artemis это очереди ANYCAST. Настройки можно передать через
 `IIB_LITE_INT_POSTGRES_URL`, `IIB_LITE_INT_POSTGRES_USER`, `IIB_LITE_INT_POSTGRES_PASSWORD`,

@@ -12,15 +12,18 @@ import org.apache.kafka.common.errors.InterruptException;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.support.SendResult;
 import ru.petrovov.iib_camel.runtime_lite.message.MessagePayload;
 import ru.petrovov.iib_camel.runtime_lite.outbox.OutboxMessage;
-import ru.petrovov.iib_camel.runtime_lite.transport.config.KafkaProducerProperties;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -35,8 +38,7 @@ class BrokerMessageSenderTest {
 
     private final ConnectionFactory connectionFactory = mock(ConnectionFactory.class);
     private final KafkaTemplate<String, byte[]> kafkaTemplate = mock(KafkaTemplate.class);
-    private final BrokerMessageSender sender = new BrokerMessageSender(
-        connectionFactory, kafkaTemplate, new KafkaProducerProperties());
+    private final BrokerMessageSender sender = new BrokerMessageSender(connectionFactory, kafkaTemplate);
 
     @Test
     void commitsPersistentJmsSendBeforeReturningAndProtectsDeliveryIdentity() throws Exception {
@@ -83,6 +85,30 @@ class BrokerMessageSenderTest {
         when(kafkaTemplate.send(any(ProducerRecord.class)))
             .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("broker rejected")));
         assertThatThrownBy(() -> sender.send(outgoing)).isInstanceOf(ExecutionException.class);
+    }
+
+    @Test
+    void doesNotReturnUntilKafkaCompletesSend() throws Exception {
+        var acknowledgement = new CompletableFuture<SendResult<String, byte[]>>();
+        var sendStarted = new CountDownLatch(1);
+        when(kafkaTemplate.send(any(ProducerRecord.class))).thenAnswer(invocation -> {
+            sendStarted.countDown();
+            return acknowledgement;
+        });
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            var result = executor.submit(() -> {
+                sender.send(message(Transport.KAFKA));
+                return null;
+            });
+            try {
+                assertThat(sendStarted.await(5, TimeUnit.SECONDS)).isTrue();
+                assertThat(result.isDone()).isFalse();
+                acknowledgement.complete(null);
+                result.get(5, TimeUnit.SECONDS);
+            } finally {
+                acknowledgement.complete(null);
+            }
+        }
     }
 
     @Test

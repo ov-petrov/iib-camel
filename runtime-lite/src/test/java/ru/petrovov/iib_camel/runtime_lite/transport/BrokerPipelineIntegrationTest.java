@@ -5,10 +5,7 @@ import jakarta.jms.JMSContext;
 import lombok.RequiredArgsConstructor;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.NewTopic;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
-import org.apache.kafka.common.serialization.ByteArrayDeserializer;
-import org.apache.kafka.common.serialization.StringDeserializer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
@@ -20,6 +17,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jms.config.JmsListenerEndpointRegistry;
+import org.springframework.kafka.core.ConsumerFactory;
+import org.springframework.kafka.core.KafkaAdmin;
 import org.springframework.scheduling.annotation.ScheduledAnnotationBeanPostProcessor;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -32,16 +31,13 @@ import ru.petrovov.iib_camel.runtime_lite.message.MessagePayload;
 import ru.petrovov.iib_camel.runtime_lite.outbox.MessagePublisher;
 import ru.petrovov.iib_camel.runtime_lite.outbox.OutboxStatus;
 import ru.petrovov.iib_camel.runtime_lite.processor.MessageProcessor;
-import ru.petrovov.iib_camel.runtime_lite.transport.config.KafkaProducerProperties;
 import tools.jackson.dataformat.xml.XmlMapper;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -59,6 +55,7 @@ class BrokerPipelineIntegrationTest {
 
     private static final String SCHEMA = "lite_broker_" + UUID.randomUUID().toString().replace("-", "");
     private static final String TOPIC = "lite-broker-" + UUID.randomUUID();
+    private static final String GROUP = "lite-test-" + UUID.randomUUID();
 
     @Autowired
     private JdbcTemplate jdbc;
@@ -88,7 +85,10 @@ class BrokerPipelineIntegrationTest {
     private RoutingProperties routing;
 
     @Autowired
-    private KafkaProducerProperties kafka;
+    private KafkaAdmin kafkaAdmin;
+
+    @Autowired
+    private ConsumerFactory<?, ?> consumerFactory;
 
     private boolean topicCreated;
 
@@ -96,6 +96,7 @@ class BrokerPipelineIntegrationTest {
     static void connections(DynamicPropertyRegistry registry) {
         registry.add("spring.liquibase.default-schema", () -> SCHEMA);
         registry.add("integration-test.topic", () -> TOPIC);
+        registry.add("spring.kafka.consumer.group-id", () -> GROUP);
     }
 
     @Test
@@ -113,17 +114,11 @@ class BrokerPipelineIntegrationTest {
             }
         }
 
-        try (var admin = AdminClient.create(kafkaClientProperties())) {
+        try (var admin = AdminClient.create(kafkaAdmin.getConfigurationProperties())) {
             admin.createTopics(List.of(new NewTopic(TOPIC, 1, (short) 1))).all().get(15, TimeUnit.SECONDS);
             topicCreated = true;
         }
-        var consumerProperties = kafkaClientProperties();
-        consumerProperties.put(ConsumerConfig.GROUP_ID_CONFIG, "lite-test-" + UUID.randomUUID());
-        consumerProperties.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
-        consumerProperties.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
-        consumerProperties.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
-        consumerProperties.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class);
-        try (var consumer = new KafkaConsumer<String, byte[]>(consumerProperties);
+        try (var consumer = new KafkaConsumer<String, byte[]>(consumerFactory.getConfigurationProperties());
              var context = connectionFactory.createContext(JMSContext.AUTO_ACKNOWLEDGE);
              var mqOutput = context.createConsumer(context.createQueue(outputQueue))) {
             consumer.subscribe(List.of(TOPIC));
@@ -179,19 +174,13 @@ class BrokerPipelineIntegrationTest {
             UUID.class, transport.name()).toString();
     }
 
-    private Map<String, Object> kafkaClientProperties() {
-        var properties = new HashMap<String, Object>(kafka.getProperties());
-        properties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.getBootstrapServers());
-        return properties;
-    }
-
     @AfterAll
     void cleanup() throws Exception {
         listeners.stop();
         scheduledTasks.destroy();
         jdbc.execute("DROP SCHEMA " + SCHEMA + " CASCADE");
         if (topicCreated) {
-            try (var admin = AdminClient.create(kafkaClientProperties())) {
+            try (var admin = AdminClient.create(kafkaAdmin.getConfigurationProperties())) {
                 admin.deleteTopics(List.of(TOPIC)).all().get(10, TimeUnit.SECONDS);
             }
         }

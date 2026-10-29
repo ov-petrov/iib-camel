@@ -3,6 +3,13 @@ spring:
     url: ${IIB_LITE_INT_POSTGRES_URL:jdbc:postgresql://localhost:5432/runtime_lite_test}
     username: ${IIB_LITE_INT_POSTGRES_USER:runtime_lite_test}
     password: ${IIB_LITE_INT_POSTGRES_PASSWORD:}
+  kafka:
+    bootstrap-servers: ${IIB_LITE_INT_KAFKA:localhost:9092}
+    consumer:
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
 
 runtime-lite:
   jms:
@@ -11,8 +18,6 @@ runtime-lite:
     broker-url: ${IIB_LITE_INT_ARTEMIS_URL:tcp://localhost:61616}
     username: ${IIB_LITE_INT_ARTEMIS_USER:}
     password: ${IIB_LITE_INT_ARTEMIS_PASSWORD:}
-  kafka:
-    bootstrap-servers: ${IIB_LITE_INT_KAFKA:localhost:9092}
   outbox:
     scheduling-enabled: true
     poll-interval: 200ms

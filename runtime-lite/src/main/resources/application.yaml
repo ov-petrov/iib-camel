@@ -12,6 +12,18 @@ spring:
       schema: ${spring.liquibase.default-schema}
   liquibase:
     default-schema: ${LITE_DB_SCHEMA:runtime_lite}
+  kafka:
+    bootstrap-servers: ${LITE_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.ByteArraySerializer
+      acks: all
+      properties:
+        '[enable.idempotence]': true
+        '[max.block.ms]': 30000
+        '[request.timeout.ms]': 30000
+        '[delivery.timeout.ms]': 30000
+        '[linger.ms]': 0
 
 runtime-lite:
   jms:
@@ -27,9 +39,6 @@ runtime-lite:
     broker-url: ${LITE_ARTEMIS_URL:tcp://localhost:61616}
     username: ${LITE_ARTEMIS_USER:}
     password: ${LITE_ARTEMIS_PASSWORD:}
-  kafka:
-    bootstrap-servers: ${LITE_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
-    send-timeout: 30s
   listeners:
     auto-startup: true
     max-body-bytes: 10485760

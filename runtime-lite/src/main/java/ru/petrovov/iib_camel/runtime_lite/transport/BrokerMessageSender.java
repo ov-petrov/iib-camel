@@ -9,17 +9,14 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.errors.InterruptException;
 import org.springframework.kafka.core.KafkaTemplate;
 import ru.petrovov.iib_camel.runtime_lite.outbox.OutboxMessage;
-import ru.petrovov.iib_camel.runtime_lite.transport.config.KafkaProducerProperties;
 
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.TimeUnit;
 
 @RequiredArgsConstructor
 public class BrokerMessageSender implements MessageSender {
 
     private final ConnectionFactory connectionFactory;
     private final KafkaTemplate<String, byte[]> kafkaTemplate;
-    private final KafkaProducerProperties kafkaProperties;
 
     @Override
     public void send(OutboxMessage message) throws Exception {
@@ -59,7 +56,7 @@ public class BrokerMessageSender implements MessageSender {
         record.headers().add(MessageHeaders.MESSAGE_ID,
             outgoing.id().toString().getBytes(StandardCharsets.UTF_8));
         try {
-            kafkaTemplate.send(record).get(kafkaProperties.getSendTimeout().toMillis(), TimeUnit.MILLISECONDS);
+            kafkaTemplate.send(record).get();
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             throw exception;
