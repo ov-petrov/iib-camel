@@ -1,8 +1,6 @@
 spring:
   application:
     name: runtime-lite
-  main:
-    web-application-type: none
   datasource:
     url: ${LITE_DB_URL:jdbc:postgresql://localhost:5432/runtime_lite}
     username: ${LITE_DB_USER:runtime_lite}
@@ -24,6 +22,17 @@ spring:
         '[request.timeout.ms]': 30000
         '[delivery.timeout.ms]': 30000
         '[linger.ms]': 0
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
 
 logging:
   structured:

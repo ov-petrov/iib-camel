@@ -150,6 +150,39 @@ Kafka-клиента; отдельного таймаута ожидания fut
 ослабить гарантии доставки. Даже подтверждённое сообщение может быть отправлено повторно из outbox, поэтому
 потребителю нужна дедупликация по `integration_message_id`.
 
+## Проверки состояния
+
+Spring Boot Actuator предоставляет HTTP-проверки состояния приложения. Приложение использует зависимости
+`spring-boot-starter-actuator` и `spring-boot-starter-webmvc`; пробы включены явно. По умолчанию HTTP-сервер
+слушает порт `8080`. Его можно изменить стандартной настройкой `server.port` или переменной `SERVER_PORT`.
+Доступен только endpoint `health`, подробности состояния в ответе не показываются. Аутентификация HTTP-запросов
+не настроена: доступ к порту следует ограничить сетевыми правилами окружения.
+
+```sh
+curl -i http://localhost:8080/actuator/health/liveness
+curl -i http://localhost:8080/actuator/health/readiness
+```
+
+Проверки отражают стандартные состояния Spring Application Availability. Liveness показывает, может ли приложение
+продолжать работу; readiness — готовность приложения. По умолчанию readiness не проверяет подключение к БД, MQ или
+Kafka и работу JMS listener. Она также не управляет потреблением JMS: состояние readiness в Kubernetes само по себе
+не гарантирует остановку потребления сообщений.
+
+Пример проверок контейнера в Kubernetes:
+
+```yaml
+livenessProbe:
+  httpGet:
+    path: /actuator/health/liveness
+    port: 8080
+readinessProbe:
+  httpGet:
+    path: /actuator/health/readiness
+    port: 8080
+```
+
+Настройте задержки и пороги проверок с учётом времени запуска приложения и условий окружения.
+
 ## Сборка и доставка
 
 Требуется JDK 21 и Maven 3.9+:
