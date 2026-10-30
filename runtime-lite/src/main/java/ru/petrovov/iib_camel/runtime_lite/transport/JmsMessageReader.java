@@ -5,7 +5,7 @@ import jakarta.jms.Message;
 import jakarta.jms.TextMessage;
 import lombok.RequiredArgsConstructor;
 import ru.petrovov.iib_camel.runtime_lite.message.InboundMessage;
-import ru.petrovov.iib_camel.runtime_lite.transport.config.ListenerProperties;
+import ru.petrovov.iib_camel.runtime_lite.config.transport.ListenerProperties;
 
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;

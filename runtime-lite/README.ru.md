@@ -10,7 +10,8 @@ Java-обработчик и надёжно записывает исходящ�
 - `processor` содержит функциональный интерфейс `MessageProcessor`.
 - `outbox` хранит исходящие сообщения и отправляет их в JMS или Kafka.
 - `transport` принимает и отправляет JMS `TextMessage`, ограничивает размер тела и отправляет текст в Kafka.
-- `config`, `jdbc`, `xml` задают YAML-настройки, имена таблиц, Liquibase и защищённый XML mapper.
+- `config` содержит общие конфигурации, включая `config.transport`, `config.inbox` и `config.xml`.
+- `jdbc` и `xml` содержат поддержку работы с таблицами доставки и защищённую обработку XML.
 
 Зарегистрируйте обработчик как Spring bean. Имя bean укажите в `runtime-lite.routes.<id>.processor`:
 
@@ -71,6 +72,46 @@ return OutboundMessage.of(Transport.JMS, "SAMPLE.OUT", output);
 загружаются. Jackson не проверяет все особенности XML-схем и не гарантирует проверку namespace при десериализации;
 для форматов без XSD нужные ограничения и namespace следует проверять явно. При ошибке процессора транзакция
 откатывается, дальнейшая повторная доставка зависит от настроек брокера.
+
+## Синтетический пример с профилем local
+
+Пример обработчика находится в `src/main/java/ru/petrovov/iib_camel/runtime_lite/processor/example`, его XSD —
+`src/main/resources/schemas/example/payment.xsd`, а готовое сообщение — в `examples/payment.xml`.
+Профиль `local` подключает обработчик к очереди Artemis `ENRICH.TEST.IN`. Обработчик проверяет XML по XSD и
+публикует исходный текст в Kafka topic `example_topic`. Если `sendNotification` равно `true`, он также публикует
+JSON-уведомление в `example_mail_topic`. Имена topic примера задаются настройками `runtime-lite.example.*` в
+`src/main/resources/application-local.yaml`. Схема принимает для `sendNotification` значения `true` и `false`.
+
+Невалидный XML направляется в `example_error_topic` с заголовком `example_error_code=INVALID_XML`, а документ
+с `amount <= 0` — с заголовком `example_error_code=NON_POSITIVE_AMOUNT`. В обоих случаях тело сообщения об ошибке
+содержит исходный текст, а исключение не включается в код ошибки. Исключения `XmlService` при чтении или проверке
+документа в этом примере относятся к `INVALID_XML`. Загрузка XSD выполняется отдельно: её ошибки, ошибки БД и outbox,
+а также другие исключения вне чтения XML откатывают транзакцию; повторная доставка входного сообщения зависит от
+настроек брокера.
+
+DTO задают порядок элементов для сериализации, соответствующий XSD. Тест проверяет путь XML → DTO → XML с повторной
+проверкой по схеме. Исходный платёж и сообщение об ошибке могут содержать данные документа, поэтому доступ к topic
+необходимо настроить соответствующим образом.
+
+Для ручной проверки подготовьте PostgreSQL, Artemis и Kafka и необходимые очередь и топики на стороне брокеров:
+приложение не создаёт брокеры. Укажите подключения и учётные данные через переменные окружения Spring, например
+`LITE_DB_URL`, `LITE_DB_USER`, `LITE_DB_PASSWORD`, `LITE_ARTEMIS_URL`, `LITE_ARTEMIS_USER`,
+`LITE_ARTEMIS_PASSWORD` и `LITE_KAFKA_BOOTSTRAP_SERVERS`. Соберите проект на JDK 21 и запустите JAR:
+
+```sh
+mvn -B -f runtime-lite/pom.xml package
+java -jar runtime-lite/target/iib-camel-runtime-lite-0.0.1-SNAPSHOT.jar --spring.profiles.active=local
+```
+
+Отправьте содержимое `runtime-lite/examples/payment.xml` как JMS `TextMessage` в очередь `ENRICH.TEST.IN` с помощью
+доступного JMS-клиента или консоли Artemis. Проверьте сообщения в основном и mail topic через Kafka consumer.
+Для проверки ошибок отдельно отправьте некорректный XML и документ с нулевой суммой, затем проверьте error topic
+и заголовок. Очередь и топики должны быть доступны приложению и клиентам; политика их создания задаётся брокером.
+
+Для интеграционной проверки примера используются настройки `src/test/resources/application-example-test.yaml`.
+Тесты полного профиля запускаются командой `mvn -B -f runtime-lite/pom.xml -Pint-test verify` после подготовки
+тестовых сервисов, описанной ниже. Дополнительно нужна выделенная пустая очередь `LITE.EXAMPLE.TEST.IN`; её имя
+можно изменить переменной `IIB_LITE_EXAMPLE_TEST_INPUT_QUEUE`.
 
 ## Конфигурация
 

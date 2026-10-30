@@ -1,10 +1,11 @@
-package ru.petrovov.iib_camel.runtime_lite.xml;
+package ru.petrovov.iib_camel.runtime_lite.config.xml;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import org.springframework.core.io.ResourceLoader;
+import ru.petrovov.iib_camel.runtime_lite.xml.XmlService;
 import ru.petrovov.iib_camel.runtime_lite.xml.schema.XmlSchemaRegistry;
 import ru.petrovov.iib_camel.runtime_lite.xml.schema.XmlSchemaValidator;
 import tools.jackson.databind.json.JsonMapper;

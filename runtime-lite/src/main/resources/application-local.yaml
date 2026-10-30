@@ -1,0 +1,11 @@
+runtime-lite:
+  jms:
+    provider: ARTEMIS
+  routes:
+    example:
+      input-queue: ENRICH.TEST.IN
+      processor: exampleProcessor
+  example:
+    main-topic: example_topic
+    mail-topic: example_mail_topic
+    error-topic: example_error_topic

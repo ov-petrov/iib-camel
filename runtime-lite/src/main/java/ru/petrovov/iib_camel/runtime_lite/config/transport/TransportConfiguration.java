@@ -1,4 +1,4 @@
-package ru.petrovov.iib_camel.runtime_lite.transport.config;
+package ru.petrovov.iib_camel.runtime_lite.config.transport;
 
 import com.ibm.mq.jakarta.jms.MQConnectionFactory;
 import com.ibm.msg.client.jakarta.wmq.WMQConstants;

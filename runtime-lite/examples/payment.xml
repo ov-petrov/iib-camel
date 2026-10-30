@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PaymentDocument>
+    <documentId>sample-001</documentId>
+    <amount>125.50</amount>
+    <currency>USD</currency>
+    <payer>
+        <name>Example Payer</name>
+        <account>sample-account-001</account>
+    </payer>
+    <sendNotification>true</sendNotification>
+</PaymentDocument>

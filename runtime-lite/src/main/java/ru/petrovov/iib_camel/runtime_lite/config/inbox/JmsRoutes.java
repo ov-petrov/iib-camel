@@ -1,4 +1,4 @@
-package ru.petrovov.iib_camel.runtime_lite.inbox;
+package ru.petrovov.iib_camel.runtime_lite.config.inbox;
 
 import jakarta.jms.JMSException;
 import lombok.RequiredArgsConstructor;
@@ -9,6 +9,7 @@ import org.springframework.jms.config.DefaultJmsListenerContainerFactory;
 import org.springframework.jms.config.JmsListenerEndpointRegistrar;
 import org.springframework.jms.config.SimpleJmsListenerEndpoint;
 import ru.petrovov.iib_camel.runtime_lite.config.RoutingProperties;
+import ru.petrovov.iib_camel.runtime_lite.inbox.MessageProcessingService;
 import ru.petrovov.iib_camel.runtime_lite.transport.JmsMessageReader;
 
 @Configuration(proxyBeanMethods = false)

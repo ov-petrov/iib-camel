@@ -6,7 +6,7 @@ import jakarta.jms.Message;
 import jakarta.jms.ObjectMessage;
 import jakarta.jms.TextMessage;
 import org.junit.jupiter.api.Test;
-import ru.petrovov.iib_camel.runtime_lite.transport.config.ListenerProperties;
+import ru.petrovov.iib_camel.runtime_lite.config.transport.ListenerProperties;
 
 import java.util.Collections;
 import java.util.List;

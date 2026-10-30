@@ -1,4 +1,4 @@
-package ru.petrovov.iib_camel.runtime_lite.xml;
+package ru.petrovov.iib_camel.runtime_lite.config.xml;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;

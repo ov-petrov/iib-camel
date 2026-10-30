@@ -3,6 +3,7 @@ package ru.petrovov.iib_camel.runtime_lite.xml;
 import com.fasterxml.jackson.annotation.JsonRootName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import ru.petrovov.iib_camel.runtime_lite.config.xml.XmlConfiguration;
 import tools.jackson.dataformat.xml.annotation.JacksonXmlProperty;
 
 import javax.xml.namespace.QName;

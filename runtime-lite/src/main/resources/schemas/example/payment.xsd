@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified">
+    <xs:simpleType name="NonEmptyString">
+        <xs:restriction base="xs:string">
+            <xs:minLength value="1"/>
+        </xs:restriction>
+    </xs:simpleType>
+
+    <xs:simpleType name="CurrencyCode">
+        <xs:restriction base="xs:string">
+            <xs:length value="3"/>
+            <xs:pattern value="[A-Z]{3}"/>
+        </xs:restriction>
+    </xs:simpleType>
+
+    <xs:simpleType name="NotificationFlag">
+        <xs:restriction base="xs:boolean">
+            <xs:pattern value="true|false"/>
+        </xs:restriction>
+    </xs:simpleType>
+
+    <xs:complexType name="Payer">
+        <xs:sequence>
+            <xs:element name="name" type="NonEmptyString"/>
+            <xs:element name="account" type="NonEmptyString"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:element name="PaymentDocument">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="documentId" type="NonEmptyString"/>
+                <xs:element name="amount" type="xs:decimal"/>
+                <xs:element name="currency" type="CurrencyCode"/>
+                <xs:element name="payer" type="Payer"/>
+                <xs:element name="sendNotification" type="NotificationFlag"/>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+</xs:schema>

@@ -1,4 +1,4 @@
-package ru.petrovov.iib_camel.runtime_lite.transport.config;
+package ru.petrovov.iib_camel.runtime_lite.config.transport;
 
 import jakarta.validation.constraints.Min;
 import lombok.Getter;
