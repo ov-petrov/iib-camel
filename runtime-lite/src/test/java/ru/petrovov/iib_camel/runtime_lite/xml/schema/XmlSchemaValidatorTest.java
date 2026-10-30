@@ -5,7 +5,6 @@ import org.junit.jupiter.api.io.TempDir;
 import org.springframework.core.io.DefaultResourceLoader;
 
 import java.net.URLClassLoader;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.jar.JarEntry;
@@ -23,10 +22,10 @@ class XmlSchemaValidatorTest {
 
     @Test
     void validatesWithIncludedSchemaAndCachesCompiledSchema() {
-        assertThatCode(() -> validator.validate(bytes("<request xmlns=\"urn:example:request\"><value>1</value></request>"), SCHEMA))
+        assertThatCode(() -> validator.validate("<request xmlns=\"urn:example:request\"><value>1</value></request>", SCHEMA))
             .doesNotThrowAnyException();
         assertThat(registry.get(SCHEMA)).isSameAs(registry.get("classpath:xml-schema/request.xsd"));
-        assertThatThrownBy(() -> validator.validate(bytes("<request xmlns=\"urn:example:request\"><value>secret</value></request>"), SCHEMA))
+        assertThatThrownBy(() -> validator.validate("<request xmlns=\"urn:example:request\"><value>secret</value></request>", SCHEMA))
             .isInstanceOf(XmlSchemaException.class)
             .hasMessageContaining("line 1")
             .hasMessageNotContaining("secret");
@@ -34,7 +33,7 @@ class XmlSchemaValidatorTest {
 
     @Test
     void validatesWithImportedSchema() {
-        assertThatCode(() -> validator.validate(bytes("<request xmlns=\"urn:example:import\">4</request>"),
+        assertThatCode(() -> validator.validate("<request xmlns=\"urn:example:import\">4</request>",
             "classpath:/xml-schema/import.xsd")).doesNotThrowAnyException();
     }
 
@@ -42,7 +41,7 @@ class XmlSchemaValidatorTest {
     void rejectsDtdAndExternalEntitiesInMessage() {
         var xml = "<!DOCTYPE request [<!ENTITY secret SYSTEM 'file:///etc/passwd'>]>"
             + "<request xmlns='urn:example:request'><value>&secret;</value></request>";
-        assertThatThrownBy(() -> validator.validate(bytes(xml), SCHEMA)).isInstanceOf(XmlSchemaException.class);
+        assertThatThrownBy(() -> validator.validate(xml, SCHEMA)).isInstanceOf(XmlSchemaException.class);
     }
 
     @Test
@@ -69,7 +68,7 @@ class XmlSchemaValidatorTest {
         try (var loader = new URLClassLoader(new java.net.URL[] {jar.toUri().toURL()}, null)) {
             var jarValidator = new XmlSchemaValidator(new XmlSchemaRegistry(new DefaultResourceLoader(loader)));
             assertThatCode(() -> jarValidator.validate(
-                bytes("<request xmlns='urn:example:request'><value>1</value></request>"), SCHEMA))
+                "<request xmlns='urn:example:request'><value>1</value></request>", SCHEMA))
                 .doesNotThrowAnyException();
         }
     }
@@ -80,9 +79,5 @@ class XmlSchemaValidatorTest {
             resource.transferTo(output);
         }
         output.closeEntry();
-    }
-
-    private static byte[] bytes(String xml) {
-        return xml.getBytes(StandardCharsets.UTF_8);
     }
 }

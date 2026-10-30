@@ -72,7 +72,7 @@ public class TransportConfiguration {
     }
 
     @Bean
-    MessageSender messageSender(ConnectionFactory connectionFactory, KafkaTemplate<String, byte[]> kafkaTemplate) {
+    MessageSender messageSender(ConnectionFactory connectionFactory, KafkaTemplate<String, String> kafkaTemplate) {
         return new BrokerMessageSender(connectionFactory, kafkaTemplate);
     }
 }

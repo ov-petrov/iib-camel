@@ -16,7 +16,7 @@ import java.nio.charset.StandardCharsets;
 public class BrokerMessageSender implements MessageSender {
 
     private final ConnectionFactory connectionFactory;
-    private final KafkaTemplate<String, byte[]> kafkaTemplate;
+    private final KafkaTemplate<String, String> kafkaTemplate;
 
     @Override
     public void send(OutboxMessage message) throws Exception {
@@ -28,8 +28,7 @@ public class BrokerMessageSender implements MessageSender {
 
     private void sendJms(OutboxMessage outgoing) throws JMSException {
         try (var context = connectionFactory.createContext(JMSContext.SESSION_TRANSACTED)) {
-            var message = context.createBytesMessage();
-            message.writeBytes(outgoing.payload().body());
+            var message = context.createTextMessage(outgoing.payload().body());
             for (var header : outgoing.payload().headers().entrySet()) {
                 if (MessageHeaders.CORRELATION_ID.equals(header.getKey())) {
                     message.setJMSCorrelationID(header.getValue());
@@ -47,7 +46,7 @@ public class BrokerMessageSender implements MessageSender {
 
     private void sendKafka(OutboxMessage outgoing) throws Exception {
         var payload = outgoing.payload();
-        var record = new ProducerRecord<String, byte[]>(outgoing.destination(), payload.key(), payload.body());
+        var record = new ProducerRecord<String, String>(outgoing.destination(), payload.key(), payload.body());
         payload.headers().forEach((name, value) -> {
             if (!MessageHeaders.MESSAGE_ID.equals(name)) {
                 record.headers().add(name, value.getBytes(StandardCharsets.UTF_8));

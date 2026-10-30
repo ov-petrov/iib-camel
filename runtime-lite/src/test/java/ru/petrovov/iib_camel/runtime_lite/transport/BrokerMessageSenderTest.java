@@ -1,6 +1,6 @@
 package ru.petrovov.iib_camel.runtime_lite.transport;
 
-import jakarta.jms.BytesMessage;
+import jakarta.jms.TextMessage;
 import jakarta.jms.ConnectionFactory;
 import jakarta.jms.DeliveryMode;
 import jakarta.jms.JMSContext;
@@ -37,17 +37,17 @@ import static org.mockito.Mockito.when;
 class BrokerMessageSenderTest {
 
     private final ConnectionFactory connectionFactory = mock(ConnectionFactory.class);
-    private final KafkaTemplate<String, byte[]> kafkaTemplate = mock(KafkaTemplate.class);
+    private final KafkaTemplate<String, String> kafkaTemplate = mock(KafkaTemplate.class);
     private final BrokerMessageSender sender = new BrokerMessageSender(connectionFactory, kafkaTemplate);
 
     @Test
     void commitsPersistentJmsSendBeforeReturningAndProtectsDeliveryIdentity() throws Exception {
         var context = mock(JMSContext.class);
         var producer = mock(JMSProducer.class);
-        var message = mock(BytesMessage.class);
+        var message = mock(TextMessage.class);
         var destination = mock(Queue.class);
         when(connectionFactory.createContext(JMSContext.SESSION_TRANSACTED)).thenReturn(context);
-        when(context.createBytesMessage()).thenReturn(message);
+        when(context.createTextMessage("Привет, мир")).thenReturn(message);
         when(context.createQueue("output")).thenReturn(destination);
         when(context.createProducer()).thenReturn(producer);
         when(producer.setDeliveryMode(DeliveryMode.PERSISTENT)).thenReturn(producer);
@@ -55,7 +55,7 @@ class BrokerMessageSenderTest {
 
         sender.send(outgoing);
 
-        verify(message).writeBytes(outgoing.payload().body());
+        verify(context).createTextMessage(outgoing.payload().body());
         verify(message).setStringProperty(MessageHeaders.MESSAGE_ID, outgoing.id().toString());
         var order = inOrder(producer, context);
         order.verify(producer).send(destination, message);
@@ -75,7 +75,7 @@ class BrokerMessageSenderTest {
 
         var captured = ArgumentCaptor.forClass(ProducerRecord.class);
         verify(kafkaTemplate).send(captured.capture());
-        ProducerRecord<String, byte[]> record = captured.getValue();
+        ProducerRecord<String, String> record = captured.getValue();
         assertThat(record.key()).isEqualTo("key");
         assertThat(record.value()).isEqualTo(outgoing.payload().body());
         assertThat(record.headers().headers(MessageHeaders.MESSAGE_ID)).hasSize(1);
@@ -89,7 +89,7 @@ class BrokerMessageSenderTest {
 
     @Test
     void doesNotReturnUntilKafkaCompletesSend() throws Exception {
-        var acknowledgement = new CompletableFuture<SendResult<String, byte[]>>();
+        var acknowledgement = new CompletableFuture<SendResult<String, String>>();
         var sendStarted = new CountDownLatch(1);
         when(kafkaTemplate.send(any(ProducerRecord.class))).thenAnswer(invocation -> {
             sendStarted.countDown();
@@ -137,6 +137,6 @@ class BrokerMessageSenderTest {
 
     private OutboxMessage message(Transport transport) {
         return new OutboxMessage(UUID.randomUUID(), transport, "output",
-            new MessagePayload(new byte[]{1, 2, 3}, "key", Map.of(MessageHeaders.MESSAGE_ID, "untrusted")), 0);
+            new MessagePayload("Привет, мир", "key", Map.of(MessageHeaders.MESSAGE_ID, "untrusted")), 0);
     }
 }

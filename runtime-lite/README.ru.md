@@ -9,7 +9,7 @@ Java-обработчик и надёжно записывает исходящ�
 - `inbox` принимает JMS-сообщения и обрабатывает их в транзакции БД.
 - `processor` содержит функциональный интерфейс `MessageProcessor`.
 - `outbox` хранит исходящие сообщения и отправляет их в JMS или Kafka.
-- `transport` читает JMS-форматы `TextMessage`/`BytesMessage`, ограничивает размер тела и отправляет сообщения.
+- `transport` принимает и отправляет JMS `TextMessage`, ограничивает размер тела и отправляет текст в Kafka.
 - `config`, `jdbc`, `xml` задают YAML-настройки, имена таблиц, Liquibase и защищённый XML mapper.
 
 Зарегистрируйте обработчик как Spring bean. Имя bean укажите в `runtime-lite.routes.<id>.processor`:
@@ -37,7 +37,7 @@ public class SampleProcessor implements MessageProcessor {
 
 Spring предоставляет `XmlService` для определения корня документа, преобразования XML в DTO и обратно. Проверка по
 XSD выбирается явно для каждого вызова. Схемы располагаются в ресурсах приложения и задаются путём `classpath:`;
-скомпилированные схемы повторно используются. XML разбирается из байтов с учётом его кодировки. Например:
+скомпилированные схемы повторно используются. XML передаётся как `String`. Например:
 
 ```java
 QName root = xmlService.detectRoot(message.body());
@@ -49,19 +49,19 @@ SampleRequest request = xmlService.readValidated(
 );
 
 SampleResponse response = handle(request);
-byte[] output = xmlService.writeValidated(response, "classpath:schemas/sample/response.xsd");
+String output = xmlService.writeValidated(response, "classpath:schemas/sample/response.xsd");
 return MessagePayload.of(output);
 ```
 
 Пример показывает вызовы внутри `MessageProcessor`: `XmlService` внедряется как Spring-зависимость, а DTO, схемы и
-метод `handle` определяются конкретной интеграцией. Для формата без XSD используются `read(bytes, Dto.class)` и
+метод `handle` определяются конкретной интеграцией. Для формата без XSD используются `read(text, Dto.class)` и
 `write(dto)`. Для настройки сериализации можно получить `ObjectWriter` вызовом `writerFor(Dto.class)` и передать его
 в `write(dto, writer)` или `writeValidated(dto, writer, schemaLocation)`.
 
 `detectRoot` возвращает `QName`: сравнивайте локальное имя и URI namespace, а не строковый префикс. При чтении без XSD
 сервис проверяет корректность XML, но не подтверждает соответствие внешнему контракту. Для обязательной схемы ошибка её
 загрузки или проверки не приводит к пропуску валидации. Значения по умолчанию, заданные XSD, при раздельной проверке
-и десериализации исходных байтов автоматически в DTO не добавляются.
+и десериализации исходного текста автоматически в DTO не добавляются.
 
 Сервис запрещает DTD и внешние XML-сущности. XSD подключается только из classpath, а разрешённые локальные зависимости
 схемы должны находиться рядом с корневой схемой или в её подкаталогах. Сетевые и произвольные файловые ссылки не
@@ -87,7 +87,7 @@ spring:
     bootstrap-servers: ${LITE_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.apache.kafka.common.serialization.ByteArraySerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
       acks: all
       properties:
         '[enable.idempotence]': true
@@ -246,6 +246,24 @@ WHERE id = '00000000-0000-4000-8000-000000000001' AND status = 'FAILED';
 
 Порядок доставки между сообщениями не гарантируется: несколько экземпляров могут отправлять записи параллельно.
 Записи содержат тело и заголовки сообщений; настройте доступ к БД и срок их хранения с учётом данных приложения.
+
+## Логирование
+
+Логи выводятся только в консоль: при активном Spring-профиле `local` или `test` используется обычный текстовый формат,
+иначе — JSON (Logstash). На уровне INFO записываются тело полученного сообщения и информация о сохранении сообщения
+в outbox после фиксации транзакции. Технические подробности обработки и отправки доступны на уровне DEBUG;
+ошибки доставки отражаются на уровне WARN, а подробности исключений — на DEBUG. Тела сообщений могут содержать
+конфиденциальные данные: учитывайте это при настройке доступа к журналам и срока их хранения.
+
+## Текст сообщений
+
+Публичные тела сообщений и XML API теперь используют `String`; JMS принимает и отправляет только `TextMessage`,
+Kafka producer использует `StringSerializer`, а тело outbox хранится в PostgreSQL как `TEXT`. Лимит входного тела
+по-прежнему измеряется в байтах UTF-8. Заголовки Kafka кодируются в UTF-8 согласно API Kafka. PostgreSQL `TEXT`
+не поддерживает нулевой символ.
+
+Liquibase создаёт таблицы для чистой базы данных. Отправители JMS должны посылать `TextMessage`, получатели JMS —
+принимать его, а потребители Kafka должны декодировать текст в UTF-8.
 
 ## Границы текущей реализации
 

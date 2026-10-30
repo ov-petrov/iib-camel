@@ -118,12 +118,12 @@ class BrokerPipelineIntegrationTest {
             admin.createTopics(List.of(new NewTopic(TOPIC, 1, (short) 1))).all().get(15, TimeUnit.SECONDS);
             topicCreated = true;
         }
-        try (var consumer = new KafkaConsumer<String, byte[]>(consumerFactory.getConfigurationProperties());
+        try (var consumer = new KafkaConsumer<String, String>(consumerFactory.getConfigurationProperties());
              var context = connectionFactory.createContext(JMSContext.AUTO_ACKNOWLEDGE);
              var mqOutput = context.createConsumer(context.createQueue(outputQueue))) {
             consumer.subscribe(List.of(TOPIC));
             listeners.start();
-            var input = context.createTextMessage("<XmlValue><value>synthetic</value></XmlValue>");
+            var input = context.createTextMessage("<XmlValue><value>Привет</value></XmlValue>");
             input.setStringProperty("sample_header", "sample_value");
             input.setJMSCorrelationID("synthetic-correlation");
             context.createProducer().send(context.createQueue(inputQueue), input);
@@ -147,20 +147,20 @@ class BrokerPipelineIntegrationTest {
             var delivered = mqOutput.receive(10000);
             assertThat(delivered).isNotNull();
             var mqMessage = reader.read(delivered);
-            assertThat(xmlMapper.readValue(mqMessage.body(), XmlValue.class)).isEqualTo(new XmlValue("SYNTHETIC"));
+            assertThat(xmlMapper.readValue(mqMessage.body(), XmlValue.class)).isEqualTo(new XmlValue("ПРИВЕТ"));
             assertThat(mqMessage.headers()).containsEntry("sample_header", "sample_value")
                 .containsEntry(MessageHeaders.CORRELATION_ID, "synthetic-correlation");
             assertThat(mqMessage.headers().get(MessageHeaders.MESSAGE_ID)).isEqualTo(deliveryId(Transport.JMS));
             assertThat(mqOutput.receive(300)).isNull();
 
-            var records = new ArrayList<org.apache.kafka.clients.consumer.ConsumerRecord<String, byte[]>>();
+            var records = new ArrayList<org.apache.kafka.clients.consumer.ConsumerRecord<String, String>>();
             await().atMost(Duration.ofSeconds(20)).until(() -> {
                 consumer.poll(Duration.ofMillis(200)).forEach(records::add);
                 return !records.isEmpty();
             });
             assertThat(records).singleElement().satisfies(record -> {
                 assertThat(record.key()).isEqualTo("synthetic");
-                assertThat(xmlMapper.readValue(record.value(), XmlValue.class)).isEqualTo(new XmlValue("SYNTHETIC"));
+                assertThat(xmlMapper.readValue(record.value(), XmlValue.class)).isEqualTo(new XmlValue("ПРИВЕТ"));
                 assertThat(new String(record.headers().lastHeader(MessageHeaders.MESSAGE_ID).value(), StandardCharsets.UTF_8))
                     .isEqualTo(deliveryId(Transport.KAFKA));
             });
@@ -208,7 +208,7 @@ class BrokerPipelineIntegrationTest {
         public MessagePayload process(InboundMessage message) {
             var input = xmlMapper.readValue(message.body(), XmlValue.class);
             var result = new XmlValue(input.value().toUpperCase(Locale.ROOT));
-            var payload = new MessagePayload(xmlMapper.writeValueAsBytes(result), "synthetic", message.headers());
+            var payload = new MessagePayload(xmlMapper.writeValueAsString(result), "synthetic", message.headers());
             publisher.send("extra", payload);
             if (invocations.incrementAndGet() == 1) {
                 throw new IllegalStateException("Synthetic transient processing failure");

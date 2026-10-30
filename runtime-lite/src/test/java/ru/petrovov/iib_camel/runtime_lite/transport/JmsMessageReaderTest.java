@@ -8,14 +8,11 @@ import jakarta.jms.TextMessage;
 import org.junit.jupiter.api.Test;
 import ru.petrovov.iib_camel.runtime_lite.transport.config.ListenerProperties;
 
-import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -36,40 +33,27 @@ class JmsMessageReaderTest {
         var result = reader.read(message);
 
         assertThat(result.id()).isEqualTo("ID:input");
-        assertThat(result.body()).isEqualTo("<value>Привет</value>".getBytes(StandardCharsets.UTF_8));
+        assertThat(result.body()).isEqualTo("<value>Привет</value>");
         assertThat(result.headers()).containsEntry("source", "sample")
             .containsEntry(MessageHeaders.CORRELATION_ID, "correlation")
             .doesNotContainKey("JMSXDeliveryCount");
     }
 
     @Test
-    void accumulatesPartialBytesReads() throws Exception {
+    void rejectsBytesMessage() throws Exception {
         var message = mock(BytesMessage.class);
         prepare(message);
-        when(message.getBodyLength()).thenReturn(6L);
-        when(message.readBytes(any(byte[].class), anyInt()))
-            .thenAnswer(invocation -> copy(invocation.getArgument(0), "abc"))
-            .thenAnswer(invocation -> copy(invocation.getArgument(0), "def"));
-
-        assertThat(reader.read(message).body()).isEqualTo("abcdef".getBytes(StandardCharsets.UTF_8));
-    }
-
-    @Test
-    void rejectsTruncatedBytesInsteadOfPaddingWithZeroes() throws Exception {
-        var message = mock(BytesMessage.class);
-        prepare(message);
-        when(message.getBodyLength()).thenReturn(3L);
-        when(message.readBytes(any(byte[].class), anyInt())).thenReturn(-1);
 
         assertThatThrownBy(() -> reader.read(message)).isInstanceOf(JMSException.class)
-            .hasMessageContaining("Incomplete");
+            .hasMessageContaining("Only TextMessage");
     }
 
     @Test
-    void rejectsOversizedBodyBeforeAllocation() throws Exception {
-        var message = mock(BytesMessage.class);
+    void enforcesLimitInUtf8Bytes() throws Exception {
+        properties.setMaxBodyBytes(3);
+        var message = mock(TextMessage.class);
         prepare(message);
-        when(message.getBodyLength()).thenReturn(Long.MAX_VALUE);
+        when(message.getText()).thenReturn("Пр");
 
         assertThatThrownBy(() -> reader.read(message)).isInstanceOf(JMSException.class)
             .hasMessageContaining("size limit");
@@ -86,7 +70,7 @@ class JmsMessageReaderTest {
 
         assertThatThrownBy(() -> reader.read(text)).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> reader.read(object)).isInstanceOf(JMSException.class)
-            .hasMessageContaining("TextMessage and BytesMessage");
+            .hasMessageContaining("Only TextMessage");
     }
 
     private void prepare(Message message) throws JMSException {
@@ -94,9 +78,4 @@ class JmsMessageReaderTest {
         when(message.getPropertyNames()).thenReturn(Collections.emptyEnumeration());
     }
 
-    private int copy(byte[] buffer, String value) {
-        byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
-        System.arraycopy(bytes, 0, buffer, 0, bytes.length);
-        return bytes.length;
-    }
 }

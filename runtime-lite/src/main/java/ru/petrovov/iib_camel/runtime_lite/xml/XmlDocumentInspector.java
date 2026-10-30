@@ -4,11 +4,11 @@ import javax.xml.namespace.QName;
 import javax.xml.stream.XMLInputFactory;
 import javax.xml.stream.XMLStreamConstants;
 import javax.xml.stream.XMLStreamException;
-import java.io.ByteArrayInputStream;
+import java.io.StringReader;
 
 final class XmlDocumentInspector {
 
-    QName inspect(byte[] xml) {
+    QName inspect(String xml) {
         var factory = XMLInputFactory.newFactory();
         factory.setProperty(XMLInputFactory.SUPPORT_DTD, false);
         factory.setProperty(XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES, false);
@@ -17,7 +17,7 @@ final class XmlDocumentInspector {
         });
 
         try {
-            var reader = factory.createXMLStreamReader(new ByteArrayInputStream(xml));
+            var reader = factory.createXMLStreamReader(new StringReader(xml));
             try {
                 QName root = null;
                 while (reader.hasNext()) {

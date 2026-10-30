@@ -9,7 +9,7 @@ CREATE TABLE ${deliverySchema}.outbox_message (
     id UUID PRIMARY KEY,
     transport TEXT NOT NULL CHECK (transport IN ('JMS', 'KAFKA')),
     destination TEXT NOT NULL,
-    body BYTEA NOT NULL,
+    body TEXT NOT NULL,
     message_key TEXT,
     headers JSONB NOT NULL,
     status TEXT NOT NULL CHECK (status IN ('PENDING', 'SENT', 'FAILED')),

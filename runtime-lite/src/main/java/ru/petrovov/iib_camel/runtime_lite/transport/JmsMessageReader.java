@@ -1,6 +1,5 @@
 package ru.petrovov.iib_camel.runtime_lite.transport;
 
-import jakarta.jms.BytesMessage;
 import jakarta.jms.JMSException;
 import jakarta.jms.Message;
 import jakarta.jms.TextMessage;
@@ -32,35 +31,17 @@ public class JmsMessageReader {
         return new InboundMessage(message.getJMSMessageID(), readBody(message), headers);
     }
 
-    private byte[] readBody(Message message) throws JMSException {
-        if (message instanceof TextMessage text) {
-            String value = text.getText();
-            if (value == null) {
-                throw new JMSException("Text message body is required");
-            }
-            requireSize(value.length());
-            byte[] body = value.getBytes(StandardCharsets.UTF_8);
-            requireSize(body.length);
-            return body;
+    private String readBody(Message message) throws JMSException {
+        if (!(message instanceof TextMessage text)) {
+            throw new JMSException("Only TextMessage is supported");
         }
-        if (message instanceof BytesMessage bytes) {
-            bytes.reset();
-            long length = bytes.getBodyLength();
-            requireSize(length);
-            byte[] body = new byte[(int) length];
-            byte[] buffer = new byte[Math.min(body.length, 8192)];
-            int offset = 0;
-            while (offset < body.length) {
-                int count = bytes.readBytes(buffer, Math.min(buffer.length, body.length - offset));
-                if (count <= 0) {
-                    throw new JMSException("Incomplete bytes message body");
-                }
-                System.arraycopy(buffer, 0, body, offset, count);
-                offset += count;
-            }
-            return body;
+        String body = text.getText();
+        if (body == null) {
+            throw new JMSException("Text message body is required");
         }
-        throw new JMSException("Only TextMessage and BytesMessage are supported");
+        requireSize(body.length());
+        requireSize(body.getBytes(StandardCharsets.UTF_8).length);
+        return body;
     }
 
     private void requireSize(long size) throws JMSException {

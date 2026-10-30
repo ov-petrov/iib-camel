@@ -41,7 +41,6 @@ import ru.petrovov.iib_camel.runtime_lite.transport.MessageSender;
 import ru.petrovov.iib_camel.runtime_lite.transport.Transport;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Optional;
@@ -141,12 +140,30 @@ class PostgresDeliveryTest {
 
     @Test
     void liquibaseCanReopenExistingSchemaWithoutChangingMigrationHistory() throws Exception {
-        String checksum = jdbc.queryForObject("SELECT md5sum FROM databasechangelog", String.class);
+        var checksums = jdbc.queryForList("SELECT md5sum FROM databasechangelog ORDER BY id", String.class);
 
         liquibase.afterPropertiesSet();
 
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM databasechangelog", Integer.class)).isEqualTo(1);
-        assertThat(jdbc.queryForObject("SELECT md5sum FROM databasechangelog", String.class)).isEqualTo(checksum);
+        assertThat(jdbc.queryForList("SELECT md5sum FROM databasechangelog ORDER BY id", String.class))
+            .hasSize(1).isEqualTo(checksums);
+    }
+
+    @Test
+    void createsOutboxBodyAsText() {
+        assertThat(jdbc.queryForObject("""
+            SELECT data_type FROM information_schema.columns
+            WHERE table_schema = ? AND table_name = 'outbox_message' AND column_name = 'body'
+            """, String.class, DELIVERY_SCHEMA)).isEqualTo("text");
+    }
+
+    @Test
+    void preservesUnicodeTextThroughOutbox() {
+        String body = "Привет 🌍";
+        outboxTransaction.executeWithoutResult(status -> publisher.send("result", MessagePayload.of(body)));
+
+        dispatcher.dispatchBatch();
+
+        assertThat(sender.calls).singleElement().satisfies(message -> assertThat(message.payload().body()).isEqualTo(body));
     }
 
     @Test
@@ -248,7 +265,7 @@ class PostgresDeliveryTest {
 
     @Test
     void refusesPublicationWithoutAnExistingDatabaseTransaction() {
-        assertThatThrownBy(() -> publisher.send("result", MessagePayload.of(bytes("payload"))))
+        assertThatThrownBy(() -> publisher.send("result", MessagePayload.of("payload")))
             .isInstanceOf(IllegalTransactionStateException.class);
         assertThat(count(tables.outbox())).isZero();
     }
@@ -266,7 +283,7 @@ class PostgresDeliveryTest {
             .satisfies(message -> {
                 assertThat(message.destination()).isEqualTo("demo.result");
                 assertThat(message.payload().key()).isEqualTo("A");
-                assertThat(message.payload().body()).isEqualTo(bytes("Synthetic label"));
+                assertThat(message.payload().body()).isEqualTo("Synthetic label");
                 assertThat(message.payload().headers()).containsEntry("sample_header", "sample_value");
             });
     }
@@ -304,7 +321,7 @@ class PostgresDeliveryTest {
         assertThat(status(id)).isEqualTo(OutboxStatus.SENT);
         assertThat(attempts(id)).isEqualTo(2);
         assertThat(sender.calls).extracting(OutboxMessage::id).containsExactly(id, id);
-        assertThat(sender.calls).allSatisfy(message -> assertThat(message.payload().body()).isEqualTo(bytes("payload")));
+        assertThat(sender.calls).allSatisfy(message -> assertThat(message.payload().body()).isEqualTo("payload"));
     }
 
     @Test
@@ -371,7 +388,7 @@ class PostgresDeliveryTest {
     }
 
     private UUID enqueue() {
-        return outboxTransaction.execute(status -> publisher.send("result", MessagePayload.of(bytes("payload"))));
+        return outboxTransaction.execute(status -> publisher.send("result", MessagePayload.of("payload")));
     }
 
     private void makeAvailable(UUID id) {
@@ -392,11 +409,7 @@ class PostgresDeliveryTest {
     }
 
     private static InboundMessage inbound(String id) {
-        return new InboundMessage(id, bytes("A"), Map.of("sample_header", "sample_value"));
-    }
-
-    private static byte[] bytes(String value) {
-        return value.getBytes(StandardCharsets.UTF_8);
+        return new InboundMessage(id, "A", Map.of("sample_header", "sample_value"));
     }
 
     @TestConfiguration(proxyBeanMethods = false)
@@ -439,14 +452,14 @@ class PostgresDeliveryTest {
         public MessagePayload process(InboundMessage message) {
             invocations.incrementAndGet();
             beforeWrite.run();
-            var reference = references.lookup(new String(message.body(), StandardCharsets.UTF_8)).orElseThrow();
+            var reference = references.lookup(message.body()).orElseThrow();
             jdbc.update("INSERT INTO " + BUSINESS_TABLE + " (message_id, label) VALUES (?, ?)",
                 message.id(), reference.label());
-            publisher.send("extra", MessagePayload.of(bytes(reference.label())));
+            publisher.send("extra", MessagePayload.of(reference.label()));
             if (fail) {
                 throw new IllegalStateException("Synthetic processing failure");
             }
-            return new MessagePayload(bytes(reference.label()), reference.code(), message.headers());
+            return new MessagePayload(reference.label(), reference.code(), message.headers());
         }
     }
 

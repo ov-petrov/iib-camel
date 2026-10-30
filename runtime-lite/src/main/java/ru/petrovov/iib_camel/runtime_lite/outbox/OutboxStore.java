@@ -61,7 +61,7 @@ public class OutboxStore {
     }
 
     private OutboxMessage read(ResultSet row, int index) throws SQLException {
-        var payload = new MessagePayload(row.getBytes("body"), row.getString("message_key"),
+        var payload = new MessagePayload(row.getString("body"), row.getString("message_key"),
             json.readValue(row.getString("headers"), HEADERS_TYPE));
         return new OutboxMessage(row.getObject("id", UUID.class), Transport.valueOf(row.getString("transport")),
             row.getString("destination"), payload, row.getInt("attempts"));

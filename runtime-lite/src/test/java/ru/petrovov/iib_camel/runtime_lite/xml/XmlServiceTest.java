@@ -6,7 +6,6 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import tools.jackson.dataformat.xml.annotation.JacksonXmlProperty;
 
 import javax.xml.namespace.QName;
-import java.nio.charset.StandardCharsets;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -24,7 +23,7 @@ class XmlServiceTest {
             var xml = result.getBean(XmlService.class);
             var payload = new Sample("Пример & value");
 
-            byte[] serialized = xml.writeValidated(payload, xml.writerFor(Sample.class).withDefaultPrettyPrinter(), SCHEMA);
+            String serialized = xml.writeValidated(payload, xml.writerFor(Sample.class).withDefaultPrettyPrinter(), SCHEMA);
 
             assertThat(xml.detectRoot(serialized)).isEqualTo(new QName("urn:example:sample:v1", "sample"));
             assertThat(xml.readValidated(serialized, SCHEMA, Sample.class)).isEqualTo(payload);
@@ -36,7 +35,7 @@ class XmlServiceTest {
     void optionalValidationRemainsExplicitAndValidatesOutgoingXml() {
         context.run(result -> {
             var xml = result.getBean(XmlService.class);
-            byte[] missingValue = "<sample xmlns='urn:example:sample:v1'/>".getBytes(StandardCharsets.UTF_8);
+            String missingValue = "<sample xmlns='urn:example:sample:v1'/>";
 
             assertThat(xml.read(missingValue, Sample.class).value()).isNull();
             assertThatThrownBy(() -> xml.readValidated(missingValue, SCHEMA, Sample.class))
@@ -54,12 +53,11 @@ class XmlServiceTest {
             var xml = result.getBean(XmlService.class);
             var source = "<?xml version='1.0' encoding='UTF-16'?><s:sample xmlns:s='urn:example:sample:v1'>"
                 + "<s:value>Привет</s:value></s:sample>";
-            byte[] bytes = source.getBytes(StandardCharsets.UTF_16);
 
-            assertThat(xml.detectRoot(bytes)).isEqualTo(new QName("urn:example:sample:v1", "sample"));
-            assertThat(xml.readValidated(bytes, SCHEMA, Sample.class)).isEqualTo(new Sample("Привет"));
-            assertThat(xml.detectRoot("<sample xmlns='urn:other'/>".getBytes(StandardCharsets.UTF_8)))
-                .isNotEqualTo(xml.detectRoot(bytes));
+            assertThat(xml.detectRoot(source)).isEqualTo(new QName("urn:example:sample:v1", "sample"));
+            assertThat(xml.readValidated(source, SCHEMA, Sample.class)).isEqualTo(new Sample("Привет"));
+            assertThat(xml.detectRoot("<sample xmlns='urn:other'/>"))
+                .isNotEqualTo(xml.detectRoot(source));
         });
     }
 
@@ -68,12 +66,11 @@ class XmlServiceTest {
         context.run(result -> {
             var xml = result.getBean(XmlService.class);
             var secret = "synthetic-secret-value";
-            byte[] dtd = ("<!DOCTYPE sample [<!ENTITY a '" + secret + "'>]><sample>&a;</sample>")
-                .getBytes(StandardCharsets.UTF_8);
-            byte[] malformed = ("<sample><value>" + secret + "</sample>").getBytes(StandardCharsets.UTF_8);
-            byte[] trailing = "<sample/><other/>".getBytes(StandardCharsets.UTF_8);
+            String dtd = "<!DOCTYPE sample [<!ENTITY a '" + secret + "'>]><sample>&a;</sample>";
+            String malformed = "<sample><value>" + secret + "</sample>";
+            String trailing = "<sample/><other/>";
 
-            for (byte[] input : new byte[][] {dtd, malformed, trailing}) {
+            for (String input : new String[] {dtd, malformed, trailing}) {
                 assertThatThrownBy(() -> xml.read(input, Sample.class))
                     .isInstanceOf(XmlProcessingException.class)
                     .hasMessageNotContaining(secret);

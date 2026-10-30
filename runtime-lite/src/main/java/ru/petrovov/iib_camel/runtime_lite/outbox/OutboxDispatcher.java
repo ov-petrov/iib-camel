@@ -35,6 +35,8 @@ public class OutboxDispatcher {
             return false;
         }
         var message = next.orElseThrow();
+        log.debug("Отправка сообщения из outbox: id={}, транспорт={}, попытка={}",
+            message.id(), message.transport(), message.attempts() + 1);
         try {
             sender.send(message);
         } catch (Exception failure) {
@@ -43,11 +45,13 @@ public class OutboxDispatcher {
                 throw new IllegalStateException("Outbox dispatch interrupted", failure);
             }
             store.markFailed(message, properties.getMaxAttempts(), properties.getRetryDelay(), failure);
-            log.warn("Outbox delivery failed: id={}, attempt={}, type={}", message.id(), message.attempts() + 1,
+            log.warn("Ошибка доставки сообщения из outbox: id={}, попытка={}, тип={}", message.id(), message.attempts() + 1,
                 failure.getClass().getSimpleName());
+            log.debug("Подробности ошибки доставки сообщения из outbox: id={}", message.id(), failure);
             return true;
         }
         store.markSent(message);
+        log.debug("Брокер подтвердил отправку сообщения из outbox: id={}", message.id());
         return true;
     }
 }

@@ -16,7 +16,7 @@ spring:
     bootstrap-servers: ${LITE_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.apache.kafka.common.serialization.ByteArraySerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
       acks: all
       properties:
         '[enable.idempotence]': true
@@ -24,6 +24,11 @@ spring:
         '[request.timeout.ms]': 30000
         '[delivery.timeout.ms]': 30000
         '[linger.ms]': 0
+
+logging:
+  structured:
+    format:
+      console: logstash
 
 runtime-lite:
   jms:
@@ -49,3 +54,15 @@ runtime-lite:
     poll-interval: PT1S
   routes: {}
   destinations: {}
+
+---
+
+spring:
+  config:
+    activate:
+      on-profile: local | test
+
+logging:
+  structured:
+    format:
+      console: ''

@@ -361,3 +361,14 @@ XML mapper отключает обработку DTD и внешних сущн�
 Проверка на Java 21: `mvn --batch-mode -f runtime-lite/pom.xml clean verify` — 41 тест, 0 failures/errors,
 13 skipped; тесты PostgreSQL и брокеров пропущены без соответствующих параметров окружения. Новые тесты проверяют
 схемы с include/import и в JAR, запрет внешних ссылок, XML без схемы, сериализацию, кодировку и ошибки.
+
+
+### Текстовые сообщения Runtime Lite — 30 октября 2026 года
+
+Контракты обработки и XML API переведены на `String`; JMS принимает и отправляет `TextMessage`, Kafka producer
+использует `KafkaTemplate<String, String>`. Для чистой базы исходный скрипт Liquibase создаёт тело outbox с типом
+`TEXT`. Ограничения и логирование описаны в [руководстве](../runtime-lite/README.ru.md).
+
+Проверка текстового транспорта на Java 21 с PostgreSQL 18, Artemis 2.53 и Kafka 4.1.1: **49 тестов,
+0 failures/errors/skipped**, включая доставку Unicode. После изменения начального скрипта повторно проверено создание
+`TEXT` на чистой PostgreSQL: **49 тестов, 0 failures/errors, 1 сквозной брокерный тест пропущен**.
