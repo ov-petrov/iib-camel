@@ -36,7 +36,7 @@ public class OutboxDispatcher {
         }
         var message = next.orElseThrow();
         log.debug("Отправка сообщения из outbox: id={}, транспорт={}, попытка={}",
-            message.id(), message.transport(), message.attempts() + 1);
+            message.id(), message.message().transport(), message.attempts() + 1);
         try {
             sender.send(message);
         } catch (Exception failure) {

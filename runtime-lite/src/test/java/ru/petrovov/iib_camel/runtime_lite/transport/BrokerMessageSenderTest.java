@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
-import ru.petrovov.iib_camel.runtime_lite.message.MessagePayload;
+import ru.petrovov.iib_camel.runtime_lite.message.OutboundMessage;
 import ru.petrovov.iib_camel.runtime_lite.outbox.OutboxMessage;
 
 import java.nio.charset.StandardCharsets;
@@ -55,7 +55,7 @@ class BrokerMessageSenderTest {
 
         sender.send(outgoing);
 
-        verify(context).createTextMessage(outgoing.payload().body());
+        verify(context).createTextMessage(outgoing.message().body());
         verify(message).setStringProperty(MessageHeaders.MESSAGE_ID, outgoing.id().toString());
         var order = inOrder(producer, context);
         order.verify(producer).send(destination, message);
@@ -77,7 +77,7 @@ class BrokerMessageSenderTest {
         verify(kafkaTemplate).send(captured.capture());
         ProducerRecord<String, String> record = captured.getValue();
         assertThat(record.key()).isEqualTo("key");
-        assertThat(record.value()).isEqualTo(outgoing.payload().body());
+        assertThat(record.value()).isEqualTo(outgoing.message().body());
         assertThat(record.headers().headers(MessageHeaders.MESSAGE_ID)).hasSize(1);
         assertThat(new String(record.headers().lastHeader(MessageHeaders.MESSAGE_ID).value(), StandardCharsets.UTF_8))
             .isEqualTo(outgoing.id().toString());
@@ -136,7 +136,8 @@ class BrokerMessageSenderTest {
     }
 
     private OutboxMessage message(Transport transport) {
-        return new OutboxMessage(UUID.randomUUID(), transport, "output",
-            new MessagePayload("Привет, мир", "key", Map.of(MessageHeaders.MESSAGE_ID, "untrusted")), 0);
+        return new OutboxMessage(UUID.randomUUID(),
+            new OutboundMessage(transport, "output", "Привет, мир", "key",
+                Map.of(MessageHeaders.MESSAGE_ID, "untrusted")), 0);
     }
 }

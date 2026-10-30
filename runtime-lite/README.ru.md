@@ -18,16 +18,19 @@ Java-обработчик и надёжно записывает исходящ�
 @Component("sampleProcessor")
 public class SampleProcessor implements MessageProcessor {
     @Override
-    public MessagePayload process(InboundMessage message) {
-        return MessagePayload.of(message.body());
+    public OutboundMessage process(InboundMessage message) {
+        return OutboundMessage.of(Transport.JMS, "SAMPLE.OUT", message.body());
     }
 }
 ```
 
-Обработчик возвращает итоговое тело сообщения. Для дополнительной отправки внедрите `MessagePublisher` и вызовите
-`send("audit", payload)` внутри `process`. И возвращаемое сообщение маршрута, и дополнительные сообщения publisher
-попадают в одну транзакционную outbox; `MessagePublisher` не отправляет их синхронно в брокер. Имена destination — ключи из
-`runtime-lite.destinations`, а транспорт и физическое назначение задаются там.
+Обработчик возвращает `OutboundMessage` с транспортом, конкретным именем очереди или топика и телом. Для сообщения
+с ключом Kafka и заголовками используйте `new OutboundMessage(transport, destination, body, key, headers)`;
+фабрика `of(transport, destination, body)` создаёт сообщение без ключа и заголовков. Для дополнительной отправки
+внедрите `MessagePublisher` и вызовите, например, `send(OutboundMessage.of(Transport.KAFKA, "sample.audit", body))`
+внутри `process`. Возвращаемое и дополнительные сообщения попадают в одну транзакционную outbox; publisher не
+отправляет их синхронно в брокер. Outbox сохраняет выбранные обработчиком транспорт и имя назначения и использует
+их при повторной доставке.
 
 В обработчик можно внедрять обычные Spring-сервисы, репозитории Spring Data JDBC и `XmlMapper` Jackson 3. Для
 преобразования моделей доступны MapStruct и Lombok; их совместная обработка аннотаций настроена в Maven. Компоненты
@@ -50,7 +53,7 @@ SampleRequest request = xmlService.readValidated(
 
 SampleResponse response = handle(request);
 String output = xmlService.writeValidated(response, "classpath:schemas/sample/response.xsd");
-return MessagePayload.of(output);
+return OutboundMessage.of(Transport.JMS, "SAMPLE.OUT", output);
 ```
 
 Пример показывает вызовы внутри `MessageProcessor`: `XmlService` внедряется как Spring-зависимость, а DTO, схемы и
@@ -122,15 +125,7 @@ runtime-lite:
     sample:
       input-queue: SAMPLE.IN
       processor: sampleProcessor
-      output: sampleOutput
       concurrency: 1
-  destinations:
-    sampleOutput:
-      transport: JMS
-      name: SAMPLE.OUT
-    audit:
-      transport: KAFKA
-      name: sample.audit
 ```
 
 `runtime-lite.jms.provider` выбирает штатный JMS-провайдер: `IBM_MQ` или `ARTEMIS`. По умолчанию используется IBM MQ;
@@ -171,7 +166,8 @@ mvn -B -f runtime-lite/pom.xml verify
 Для полного сквозного теста нужны PostgreSQL, Artemis и Kafka. Настройки подключения и имена двух отдельных очередей
 задаются в `runtime-lite/src/test/resources/application-int-test.yaml`: `spring.datasource.*`,
 `runtime-lite.jms.provider`, `runtime-lite.artemis.*`, `spring.kafka.bootstrap-servers`,
-`runtime-lite.routes.broker.input-queue` и `runtime-lite.destinations.extra.name`. Перед запуском укажите доступные
+`runtime-lite.routes.broker.input-queue`. Выходная очередь задаётся параметром тестового обработчика
+`IIB_LITE_INT_OUTPUT_QUEUE` (по умолчанию `LITE.TEST.OUT`). Перед запуском укажите доступные
 тестовые сервисы и две выделенные пустые JMS-очереди; для Artemis это очереди ANYCAST. Настройки можно передать через
 `IIB_LITE_INT_POSTGRES_URL`, `IIB_LITE_INT_POSTGRES_USER`, `IIB_LITE_INT_POSTGRES_PASSWORD`,
 `IIB_LITE_INT_ARTEMIS_URL`, `IIB_LITE_INT_ARTEMIS_USER`, `IIB_LITE_INT_ARTEMIS_PASSWORD`, `IIB_LITE_INT_KAFKA`,

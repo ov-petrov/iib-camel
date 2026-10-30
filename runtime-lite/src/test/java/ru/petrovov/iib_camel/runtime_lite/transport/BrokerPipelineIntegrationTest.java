@@ -27,7 +27,7 @@ import ru.petrovov.iib_camel.runtime_lite.RuntimeLiteApplication;
 import ru.petrovov.iib_camel.runtime_lite.config.RoutingProperties;
 import ru.petrovov.iib_camel.runtime_lite.jdbc.DeliveryTables;
 import ru.petrovov.iib_camel.runtime_lite.message.InboundMessage;
-import ru.petrovov.iib_camel.runtime_lite.message.MessagePayload;
+import ru.petrovov.iib_camel.runtime_lite.message.OutboundMessage;
 import ru.petrovov.iib_camel.runtime_lite.outbox.MessagePublisher;
 import ru.petrovov.iib_camel.runtime_lite.outbox.OutboxStatus;
 import ru.petrovov.iib_camel.runtime_lite.processor.MessageProcessor;
@@ -55,6 +55,7 @@ class BrokerPipelineIntegrationTest {
 
     private static final String SCHEMA = "lite_broker_" + UUID.randomUUID().toString().replace("-", "");
     private static final String TOPIC = "lite-broker-" + UUID.randomUUID();
+    private static final String OUTPUT_QUEUE = System.getenv().getOrDefault("IIB_LITE_INT_OUTPUT_QUEUE", "LITE.TEST.OUT");
     private static final String GROUP = "lite-test-" + UUID.randomUUID();
 
     @Autowired
@@ -95,14 +96,13 @@ class BrokerPipelineIntegrationTest {
     @DynamicPropertySource
     static void connections(DynamicPropertyRegistry registry) {
         registry.add("spring.liquibase.default-schema", () -> SCHEMA);
-        registry.add("integration-test.topic", () -> TOPIC);
         registry.add("spring.kafka.consumer.group-id", () -> GROUP);
     }
 
     @Test
     void redeliversFailedInputAndPublishesOnlyCommittedOutputs() throws Exception {
         String inputQueue = routing.getRoutes().get("broker").getInputQueue();
-        String outputQueue = routing.getDestinations().get("extra").getName();
+        String outputQueue = OUTPUT_QUEUE;
         if (inputQueue.equals(outputQueue)) {
             throw new IllegalArgumentException("The test requires separate input and output queues");
         }
@@ -191,7 +191,7 @@ class BrokerPipelineIntegrationTest {
 
         @Bean
         BrokerTestProcessor brokerTestProcessor(MessagePublisher publisher, XmlMapper xmlMapper) {
-            return new BrokerTestProcessor(publisher, xmlMapper);
+            return new BrokerTestProcessor(publisher, xmlMapper, OUTPUT_QUEUE);
         }
     }
 
@@ -200,16 +200,17 @@ class BrokerPipelineIntegrationTest {
 
         private final MessagePublisher publisher;
         private final XmlMapper xmlMapper;
+        private final String outputQueue;
         private final AtomicInteger invocations = new AtomicInteger();
         private final CountDownLatch redeliveryStarted = new CountDownLatch(1);
         private final CountDownLatch allowRedelivery = new CountDownLatch(1);
 
         @Override
-        public MessagePayload process(InboundMessage message) {
+        public OutboundMessage process(InboundMessage message) {
             var input = xmlMapper.readValue(message.body(), XmlValue.class);
             var result = new XmlValue(input.value().toUpperCase(Locale.ROOT));
-            var payload = new MessagePayload(xmlMapper.writeValueAsString(result), "synthetic", message.headers());
-            publisher.send("extra", payload);
+            var body = xmlMapper.writeValueAsString(result);
+            publisher.send(new OutboundMessage(Transport.JMS, outputQueue, body, "synthetic", message.headers()));
             if (invocations.incrementAndGet() == 1) {
                 throw new IllegalStateException("Synthetic transient processing failure");
             }
@@ -222,7 +223,7 @@ class BrokerPipelineIntegrationTest {
                 Thread.currentThread().interrupt();
                 throw new IllegalStateException("Test redelivery interrupted", exception);
             }
-            return payload;
+            return new OutboundMessage(Transport.KAFKA, TOPIC, body, "synthetic", message.headers());
         }
     }
 

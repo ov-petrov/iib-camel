@@ -14,17 +14,6 @@ import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 class RoutingConfigurationTest {
 
     @Test
-    void rejectsMissingDestinationBeforeStartingListeners() {
-        var properties = new RoutingProperties();
-        var route = new RoutingProperties.Route();
-        route.setOutput("missing");
-        properties.getRoutes().put("sample", route);
-
-        assertThatIllegalArgumentException().isThrownBy(() -> new RoutingCatalog(properties).validate())
-            .withMessageContaining("Unknown destination");
-    }
-
-    @Test
     void deliveryTablesAlwaysUseValidatedExplicitSchema() {
         assertThat(new DeliveryTables("custom_delivery").outbox()).isEqualTo("custom_delivery.outbox_message");
         assertThatIllegalArgumentException().isThrownBy(() -> new DeliveryTables("public; DROP SCHEMA public"));

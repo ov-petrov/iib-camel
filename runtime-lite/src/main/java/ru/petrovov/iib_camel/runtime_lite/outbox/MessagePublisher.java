@@ -7,8 +7,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
-import ru.petrovov.iib_camel.runtime_lite.config.RoutingCatalog;
-import ru.petrovov.iib_camel.runtime_lite.message.MessagePayload;
+import ru.petrovov.iib_camel.runtime_lite.message.OutboundMessage;
 
 import java.util.UUID;
 
@@ -17,18 +16,18 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class MessagePublisher {
 
-    private final RoutingCatalog catalog;
     private final OutboxStore store;
 
     @Transactional(propagation = Propagation.MANDATORY)
-    public UUID send(String destination, MessagePayload payload) {
-        var target = catalog.destination(destination);
-        UUID id = store.append(target.getTransport(), target.getName(), payload);
-        log.debug("Сообщение добавлено в транзакцию outbox: id={}, назначение={}", id, destination);
+    public UUID send(OutboundMessage message) {
+        UUID id = store.append(message);
+        log.debug("Сообщение добавлено в транзакцию outbox: id={}, транспорт={}, канал={}",
+            id, message.transport(), message.destination());
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                log.info("Сообщение успешно сохранено в outbox: id={}, назначение={}", id, destination);
+                log.info("Сообщение успешно сохранено в outbox: id={}, транспорт={}, канал={}",
+                    id, message.transport(), message.destination());
             }
         });
         return id;

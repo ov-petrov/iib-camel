@@ -37,8 +37,8 @@ public class MessageProcessingService {
         log.debug("Начата обработка сообщения: маршрут={}, id={}, обработчик={}",
             routeId, message.id(), route.getProcessor());
         var result = Objects.requireNonNull(processor(route.getProcessor()).process(message),
-            "MessageProcessor must return the final payload");
-        publisher.send(route.getOutput(), result);
+            "MessageProcessor must return the outbound message");
+        publisher.send(result);
         log.debug("Обработка сообщения завершена: маршрут={}, id={}", routeId, message.id());
     }
 

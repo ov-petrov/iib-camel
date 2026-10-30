@@ -53,7 +53,6 @@ runtime-lite:
     retry-delay: 10s
     poll-interval: PT1S
   routes: {}
-  destinations: {}
 
 ---
 

@@ -25,11 +25,3 @@ runtime-lite:
     broker:
       input-queue: ${IIB_LITE_INT_INPUT_QUEUE:LITE.TEST.IN}
       processor: brokerTestProcessor
-      output: result
-  destinations:
-    result:
-      transport: KAFKA
-      name: ${integration-test.topic}
-    extra:
-      transport: JMS
-      name: ${IIB_LITE_INT_OUTPUT_QUEUE:LITE.TEST.OUT}

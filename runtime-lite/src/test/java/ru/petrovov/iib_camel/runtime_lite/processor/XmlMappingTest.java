@@ -7,7 +7,8 @@ import org.mapstruct.Mapping;
 import org.mapstruct.ReportingPolicy;
 import org.mapstruct.factory.Mappers;
 import ru.petrovov.iib_camel.runtime_lite.message.InboundMessage;
-import ru.petrovov.iib_camel.runtime_lite.message.MessagePayload;
+import ru.petrovov.iib_camel.runtime_lite.message.OutboundMessage;
+import ru.petrovov.iib_camel.runtime_lite.transport.Transport;
 import tools.jackson.dataformat.xml.XmlMapper;
 
 import java.util.Map;
@@ -22,7 +23,7 @@ class XmlMappingTest {
         var mapper = Mappers.getMapper(DocumentMapper.class);
         MessageProcessor processor = message -> {
             var source = xml.readValue(message.body(), SourceDocument.class);
-            return MessagePayload.of(xml.writeValueAsString(mapper.convert(source)));
+            return OutboundMessage.of(Transport.JMS, "output", xml.writeValueAsString(mapper.convert(source)));
         };
         var inbound = new InboundMessage("synthetic-1",
             "<document><label>Example &amp; value</label></document>", Map.of());

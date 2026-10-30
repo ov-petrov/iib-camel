@@ -3,15 +3,6 @@ runtime-lite:
     sample:
       input-queue: DEMO.IN
       processor: sampleProcessor
-      output: result
     other:
       input-queue: DEMO.OTHER.IN
       processor: sampleProcessor
-      output: result
-  destinations:
-    result:
-      transport: KAFKA
-      name: demo.result
-    extra:
-      transport: JMS
-      name: DEMO.EXTRA

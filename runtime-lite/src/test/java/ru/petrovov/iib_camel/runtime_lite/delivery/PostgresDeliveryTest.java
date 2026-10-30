@@ -31,7 +31,7 @@ import ru.petrovov.iib_camel.runtime_lite.config.OutboxProperties;
 import ru.petrovov.iib_camel.runtime_lite.inbox.MessageProcessingService;
 import ru.petrovov.iib_camel.runtime_lite.jdbc.DeliveryTables;
 import ru.petrovov.iib_camel.runtime_lite.message.InboundMessage;
-import ru.petrovov.iib_camel.runtime_lite.message.MessagePayload;
+import ru.petrovov.iib_camel.runtime_lite.message.OutboundMessage;
 import ru.petrovov.iib_camel.runtime_lite.outbox.MessagePublisher;
 import ru.petrovov.iib_camel.runtime_lite.outbox.OutboxDispatcher;
 import ru.petrovov.iib_camel.runtime_lite.outbox.OutboxMessage;
@@ -159,11 +159,11 @@ class PostgresDeliveryTest {
     @Test
     void preservesUnicodeTextThroughOutbox() {
         String body = "Привет 🌍";
-        outboxTransaction.executeWithoutResult(status -> publisher.send("result", MessagePayload.of(body)));
+        outboxTransaction.executeWithoutResult(status -> publisher.send(OutboundMessage.of(Transport.KAFKA, "demo.result", body)));
 
         dispatcher.dispatchBatch();
 
-        assertThat(sender.calls).singleElement().satisfies(message -> assertThat(message.payload().body()).isEqualTo(body));
+        assertThat(sender.calls).singleElement().satisfies(message -> assertThat(message.message().body()).isEqualTo(body));
     }
 
     @Test
@@ -179,6 +179,22 @@ class PostgresDeliveryTest {
         assertThat(jdbc.queryForObject("SELECT message_key FROM " + tables.outbox() + " WHERE transport = ?",
             String.class, Transport.KAFKA.name())).isEqualTo("A");
         assertThat(sender.calls).isEmpty();
+    }
+
+    @Test
+    void processorChoosesAndPersistsDestinationForEachInputBeforeDispatch() {
+        processing.process("sample", inbound("ID:kafka"));
+        processing.process("sample", new InboundMessage("ID:jms", "A", Map.of("target", "jms")));
+
+        assertThat(jdbc.queryForList("SELECT transport, destination FROM " + tables.outbox()
+            + " WHERE destination IN (?, ?)", "demo.result", "demo.dynamic"))
+            .extracting(row -> row.get("transport") + ":" + row.get("destination"))
+            .containsExactlyInAnyOrder("KAFKA:demo.result", "JMS:demo.dynamic");
+
+        assertThat(dispatcher.dispatchBatch()).isEqualTo(4);
+        assertThat(sender.calls).extracting(message ->
+            message.message().transport().name() + ":" + message.message().destination())
+            .contains("KAFKA:demo.result", "JMS:demo.dynamic");
     }
 
     @Test
@@ -265,7 +281,7 @@ class PostgresDeliveryTest {
 
     @Test
     void refusesPublicationWithoutAnExistingDatabaseTransaction() {
-        assertThatThrownBy(() -> publisher.send("result", MessagePayload.of("payload")))
+        assertThatThrownBy(() -> publisher.send(OutboundMessage.of(Transport.KAFKA, "demo.result", "payload")))
             .isInstanceOf(IllegalTransactionStateException.class);
         assertThat(count(tables.outbox())).isZero();
     }
@@ -279,12 +295,12 @@ class PostgresDeliveryTest {
 
         assertThat(sender.calls).hasSize(2);
         assertThat(sender.calls).allSatisfy(message -> assertThat(status(message.id())).isEqualTo(OutboxStatus.SENT));
-        assertThat(sender.calls).filteredOn(message -> message.transport() == Transport.KAFKA).singleElement()
+        assertThat(sender.calls).filteredOn(message -> message.message().transport() == Transport.KAFKA).singleElement()
             .satisfies(message -> {
-                assertThat(message.destination()).isEqualTo("demo.result");
-                assertThat(message.payload().key()).isEqualTo("A");
-                assertThat(message.payload().body()).isEqualTo("Synthetic label");
-                assertThat(message.payload().headers()).containsEntry("sample_header", "sample_value");
+                assertThat(message.message().destination()).isEqualTo("demo.result");
+                assertThat(message.message().key()).isEqualTo("A");
+                assertThat(message.message().body()).isEqualTo("Synthetic label");
+                assertThat(message.message().headers()).containsEntry("sample_header", "sample_value");
             });
     }
 
@@ -321,7 +337,7 @@ class PostgresDeliveryTest {
         assertThat(status(id)).isEqualTo(OutboxStatus.SENT);
         assertThat(attempts(id)).isEqualTo(2);
         assertThat(sender.calls).extracting(OutboxMessage::id).containsExactly(id, id);
-        assertThat(sender.calls).allSatisfy(message -> assertThat(message.payload().body()).isEqualTo("payload"));
+        assertThat(sender.calls).allSatisfy(message -> assertThat(message.message().body()).isEqualTo("payload"));
     }
 
     @Test
@@ -388,7 +404,7 @@ class PostgresDeliveryTest {
     }
 
     private UUID enqueue() {
-        return outboxTransaction.execute(status -> publisher.send("result", MessagePayload.of("payload")));
+        return outboxTransaction.execute(status -> publisher.send(OutboundMessage.of(Transport.KAFKA, "demo.result", "payload")));
     }
 
     private void makeAvailable(UUID id) {
@@ -449,17 +465,20 @@ class PostgresDeliveryTest {
         private volatile Runnable beforeWrite = () -> { };
 
         @Override
-        public MessagePayload process(InboundMessage message) {
+        public OutboundMessage process(InboundMessage message) {
             invocations.incrementAndGet();
             beforeWrite.run();
             var reference = references.lookup(message.body()).orElseThrow();
             jdbc.update("INSERT INTO " + BUSINESS_TABLE + " (message_id, label) VALUES (?, ?)",
                 message.id(), reference.label());
-            publisher.send("extra", MessagePayload.of(reference.label()));
+            publisher.send(OutboundMessage.of(Transport.JMS, "demo.extra", reference.label()));
             if (fail) {
                 throw new IllegalStateException("Synthetic processing failure");
             }
-            return new MessagePayload(reference.label(), reference.code(), message.headers());
+            if ("jms".equals(message.headers().get("target"))) {
+                return new OutboundMessage(Transport.JMS, "demo.dynamic", reference.label(), reference.code(), message.headers());
+            }
+            return new OutboundMessage(Transport.KAFKA, "demo.result", reference.label(), reference.code(), message.headers());
         }
     }
 
