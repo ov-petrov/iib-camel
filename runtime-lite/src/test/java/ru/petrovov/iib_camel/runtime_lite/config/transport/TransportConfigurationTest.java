@@ -91,6 +91,24 @@ class TransportConfigurationTest {
     }
 
     @Test
+    void boundsArtemisCallsWhenEnrichmentIsConfigured() {
+        var enrichment = context.withPropertyValues("runtime-lite.jms.provider=ARTEMIS",
+            "runtime-lite.enrichment.operations.lookup-v1.request-queue=SAMPLE.REQUEST",
+            "runtime-lite.enrichment.operations.lookup-v1.reply-queue=SAMPLE.REPLY");
+
+        enrichment.withPropertyValues(
+                "runtime-lite.artemis.broker-url=tcp://localhost:61617?callTimeout=2000&callFailoverTimeout=-1")
+            .run(result -> {
+                assertThat(result).hasNotFailed();
+                var factory = result.getBean(ActiveMQConnectionFactory.class);
+                assertThat(factory.getCallTimeout()).isEqualTo(2000);
+                assertThat(factory.getCallFailoverTimeout()).isEqualTo(2000);
+            });
+        enrichment.withPropertyValues("runtime-lite.artemis.broker-url=tcp://localhost:61617?initialConnectAttempts=-1")
+            .run(result -> assertThat(result).hasFailed());
+    }
+
+    @Test
     void appliesCommonKafkaSecurityPropertiesToAllClients() {
         context.withPropertyValues("spring.kafka.properties[security.protocol]=SASL_SSL",
                 "spring.kafka.properties[sasl.mechanism]=PLAIN",

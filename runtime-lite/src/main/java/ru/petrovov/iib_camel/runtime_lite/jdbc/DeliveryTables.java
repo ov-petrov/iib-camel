@@ -20,11 +20,15 @@ public record DeliveryTables(String schema) {
         }
     }
 
-    public String receipts() {
-        return schema + ".inbound_receipt";
+    public String inboundMessages() {
+        return schema + ".inbound_message";
     }
 
     public String outbox() {
         return schema + ".outbox_message";
+    }
+
+    public String enrichment() {
+        return schema + ".enrichment_workflow";
     }
 }

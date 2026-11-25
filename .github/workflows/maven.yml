@@ -56,10 +56,20 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      artemis:
+        image: apache/artemis:2.53.0-alpine
+        env:
+          ARTEMIS_USER: lite_test
+          ARTEMIS_PASSWORD: lite_test
+        ports:
+          - 61616:61616
     env:
-      IIB_LITE_TEST_POSTGRES_URL: jdbc:postgresql://localhost:5432/runtime_test
-      IIB_LITE_TEST_POSTGRES_USER: runtime_test
-      IIB_LITE_TEST_POSTGRES_PASSWORD: runtime_test
+      IIB_LITE_INT_POSTGRES_URL: jdbc:postgresql://localhost:5432/runtime_test
+      IIB_LITE_INT_POSTGRES_USER: runtime_test
+      IIB_LITE_INT_POSTGRES_PASSWORD: runtime_test
+      IIB_LITE_INT_ARTEMIS_URL: tcp://localhost:61616
+      IIB_LITE_INT_ARTEMIS_USER: lite_test
+      IIB_LITE_INT_ARTEMIS_PASSWORD: lite_test
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -69,8 +79,10 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
-      - name: Verify runtime-lite with PostgreSQL
-        run: mvn -B -f runtime-lite/pom.xml verify
+      - name: Verify runtime-lite with PostgreSQL and Artemis
+        run: mvn -B -f runtime-lite/pom.xml -Pint-test verify
+      - name: Verify XSD generation tool
+        run: mvn -B -f runtime-lite/xsd-tool/pom.xml verify
 
   converter-compatibility:
     runs-on: ubuntu-latest

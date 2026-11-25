@@ -56,21 +56,20 @@ runtime-lite:
   listeners:
     auto-startup: true
     max-body-bytes: 10485760
+  soap:
+    plain-jms-destinations: []
+    max-depth: 128
+    max-elements: 100000
   outbox:
     batch-size: 20
     max-attempts: 10
     retry-delay: 10s
     poll-interval: PT1S
+  enrichment:
+    default-reply-timeout: 20s
+    dispatch-timeout: 2m
+    poll-interval: 1s
+    batch-size: 20
+    reply-concurrency: 2
+    operations: {}
   routes: {}
-
----
-
-spring:
-  config:
-    activate:
-      on-profile: local | test
-
-logging:
-  structured:
-    format:
-      console: ''

@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
+import ru.petrovov.iib_camel.runtime_lite.message.MessageBody;
 import ru.petrovov.iib_camel.runtime_lite.message.OutboundMessage;
 import ru.petrovov.iib_camel.runtime_lite.outbox.OutboxMessage;
 
@@ -136,8 +137,17 @@ class BrokerMessageSenderTest {
     }
 
     private OutboxMessage message(Transport transport) {
-        return new OutboxMessage(UUID.randomUUID(),
-            new OutboundMessage(transport, "output", "Привет, мир", "key",
-                Map.of(MessageHeaders.MESSAGE_ID, "untrusted")), 0);
+        var outgoing = OutboundMessage.builder()
+            .transport(transport)
+            .destination("output")
+            .payload(MessageBody.text("Привет, мир"))
+            .key("key")
+            .headers(Map.of(MessageHeaders.MESSAGE_ID, "untrusted"))
+            .build();
+        return OutboxMessage.builder()
+            .id(UUID.randomUUID())
+            .message(outgoing)
+            .attempts(0)
+            .build();
     }
 }

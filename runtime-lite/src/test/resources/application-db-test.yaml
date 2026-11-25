@@ -1,8 +1,0 @@
-runtime-lite:
-  routes:
-    sample:
-      input-queue: DEMO.IN
-      processor: sampleProcessor
-    other:
-      input-queue: DEMO.OTHER.IN
-      processor: sampleProcessor

@@ -1,8 +1,39 @@
 databaseChangeLog:
   - changeSet:
-      id: runtime-lite-001
+      id: table-inbound-message
+      author: runtime-lite
+      runOnChange: true
+      changes:
+        - sqlFile:
+            path: sql/tables/001-inbound-message.sql
+            relativeToChangelogFile: true
+  - changeSet:
+      id: table-outbox-message
+      author: runtime-lite
+      runOnChange: true
+      changes:
+        - sqlFile:
+            path: sql/tables/001-outbox-message.sql
+            relativeToChangelogFile: true
+  - changeSet:
+      id: table-enrichment-workflow
+      author: runtime-lite
+      runOnChange: true
+      changes:
+        - sqlFile:
+            path: sql/tables/002-enrichment-workflow.sql
+            relativeToChangelogFile: true
+  - changeSet:
+      id: enrichment-ready-to-map
       author: runtime-lite
       changes:
         - sqlFile:
-            path: sql/001-delivery.sql
+            path: sql/tables/003-enrichment-ready-to-map.sql
+            relativeToChangelogFile: true
+  - changeSet:
+      id: jms-payload-format
+      author: runtime-lite
+      changes:
+        - sqlFile:
+            path: sql/tables/004-jms-payload-format.sql
             relativeToChangelogFile: true

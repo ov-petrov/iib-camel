@@ -4,20 +4,14 @@ import javax.xml.namespace.QName;
 import javax.xml.stream.XMLInputFactory;
 import javax.xml.stream.XMLStreamConstants;
 import javax.xml.stream.XMLStreamException;
+import javax.xml.stream.XMLStreamReader;
 import java.io.StringReader;
 
 final class XmlDocumentInspector {
 
     QName inspect(String xml) {
-        var factory = XMLInputFactory.newFactory();
-        factory.setProperty(XMLInputFactory.SUPPORT_DTD, false);
-        factory.setProperty(XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES, false);
-        factory.setXMLResolver((publicId, systemId, baseUri, namespace) -> {
-            throw new XMLStreamException("External XML resources are forbidden");
-        });
-
         try {
-            var reader = factory.createXMLStreamReader(new StringReader(xml));
+            var reader = reader(xml);
             try {
                 QName root = null;
                 while (reader.hasNext()) {
@@ -42,5 +36,15 @@ final class XmlDocumentInspector {
                 + ", column " + location.getColumnNumber();
             throw new XmlProcessingException("Cannot parse XML document" + position);
         }
+    }
+
+    static XMLStreamReader reader(String xml) throws XMLStreamException {
+        var factory = XMLInputFactory.newFactory();
+        factory.setProperty(XMLInputFactory.SUPPORT_DTD, false);
+        factory.setProperty(XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES, false);
+        factory.setXMLResolver((publicId, systemId, baseUri, namespace) -> {
+            throw new XMLStreamException("External XML resources are forbidden");
+        });
+        return factory.createXMLStreamReader(new StringReader(xml));
     }
 }

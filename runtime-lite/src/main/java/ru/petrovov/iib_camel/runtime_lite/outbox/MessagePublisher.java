@@ -8,6 +8,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import ru.petrovov.iib_camel.runtime_lite.message.OutboundMessage;
+import ru.petrovov.iib_camel.runtime_lite.soap.SoapProcessingException;
+import ru.petrovov.iib_camel.runtime_lite.transport.JmsPayloadCodec;
+import ru.petrovov.iib_camel.runtime_lite.transport.Transport;
 
 import java.util.UUID;
 
@@ -17,10 +20,23 @@ import java.util.UUID;
 public class MessagePublisher {
 
     private final OutboxStore store;
+    private final JmsPayloadCodec payloadCodec;
 
-    @Transactional(propagation = Propagation.MANDATORY)
+    @Transactional(propagation = Propagation.MANDATORY, noRollbackFor = SoapProcessingException.class)
     public UUID send(OutboundMessage message) {
-        UUID id = store.append(message);
+        return publish(message, null);
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY, noRollbackFor = SoapProcessingException.class)
+    public UUID sendRequest(OutboundMessage message, String replyQueue) {
+        if (message.transport() != Transport.JMS || replyQueue == null || replyQueue.isBlank()) {
+            throw new IllegalArgumentException("A JMS request requires a reply queue");
+        }
+        return publish(message, replyQueue);
+    }
+
+    private UUID publish(OutboundMessage message, String replyQueue) {
+        UUID id = store.append(payloadCodec.encode(message), replyQueue);
         log.debug("Сообщение добавлено в транзакцию outbox: id={}, транспорт={}, канал={}",
             id, message.transport(), message.destination());
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {

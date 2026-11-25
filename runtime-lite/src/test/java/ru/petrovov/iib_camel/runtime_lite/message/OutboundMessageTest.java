@@ -34,7 +34,13 @@ class OutboundMessageTest {
     @Test
     void preservesHeadersWhenProcessorChangesItsOriginalMap() {
         var headers = new HashMap<>(Map.of("sample_header", "initial"));
-        var message = new OutboundMessage(Transport.KAFKA, "sample.output", "body", "key", headers);
+        var message = OutboundMessage.builder()
+            .transport(Transport.KAFKA)
+            .destination("sample.output")
+            .payload(MessageBody.text("body"))
+            .key("key")
+            .headers(headers)
+            .build();
 
         headers.put("sample_header", "changed");
 
