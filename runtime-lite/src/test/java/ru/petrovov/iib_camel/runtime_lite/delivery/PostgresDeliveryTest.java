@@ -1,12 +1,18 @@
 package ru.petrovov.iib_camel.runtime_lite.delivery;
 
 import lombok.RequiredArgsConstructor;
+import liquibase.Contexts;
+import liquibase.LabelExpression;
+import liquibase.Liquibase;
+import liquibase.database.DatabaseFactory;
+import liquibase.database.jvm.JdbcConnection;
 import liquibase.integration.spring.SpringLiquibase;
+import liquibase.resource.ClassLoaderResourceAccessor;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
-import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -31,6 +37,7 @@ import ru.petrovov.iib_camel.runtime_lite.config.OutboxProperties;
 import ru.petrovov.iib_camel.runtime_lite.inbox.MessageProcessingService;
 import ru.petrovov.iib_camel.runtime_lite.jdbc.DeliveryTables;
 import ru.petrovov.iib_camel.runtime_lite.message.InboundMessage;
+import ru.petrovov.iib_camel.runtime_lite.message.MessageBody;
 import ru.petrovov.iib_camel.runtime_lite.message.OutboundMessage;
 import ru.petrovov.iib_camel.runtime_lite.outbox.MessagePublisher;
 import ru.petrovov.iib_camel.runtime_lite.outbox.OutboxDispatcher;
@@ -40,8 +47,11 @@ import ru.petrovov.iib_camel.runtime_lite.processor.MessageProcessor;
 import ru.petrovov.iib_camel.runtime_lite.transport.MessageSender;
 import ru.petrovov.iib_camel.runtime_lite.transport.Transport;
 
+import javax.sql.DataSource;
 import java.io.IOException;
 import java.time.Duration;
+import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -51,15 +61,16 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 @SpringBootTest(classes = RuntimeLiteApplication.class)
-@ActiveProfiles({"test", "db-test"})
+@ActiveProfiles("int-test")
 @Import(PostgresDeliveryTest.Fixtures.class)
-@EnabledIfEnvironmentVariable(named = "IIB_LITE_TEST_POSTGRES_URL", matches = ".+")
+@EnabledIfSystemProperty(named = "runtime-lite.integration-test", matches = "true")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class PostgresDeliveryTest {
 
@@ -72,6 +83,9 @@ class PostgresDeliveryTest {
 
     @Autowired
     private DeliveryTables tables;
+
+    @Autowired
+    private DataSource dataSource;
 
     @Autowired
     private SpringLiquibase liquibase;
@@ -103,6 +117,13 @@ class PostgresDeliveryTest {
     @DynamicPropertySource
     static void database(DynamicPropertyRegistry registry) {
         registry.add("spring.liquibase.default-schema", () -> DELIVERY_SCHEMA);
+        registry.add("runtime-lite.outbox.scheduling-enabled", () -> false);
+        registry.add("runtime-lite.routes.sample.input-queue", () -> "DEMO.IN");
+        registry.add("runtime-lite.routes.sample.processor", () -> "sampleProcessor");
+        registry.add("runtime-lite.routes.other.input-queue", () -> "DEMO.OTHER.IN");
+        registry.add("runtime-lite.routes.other.processor", () -> "sampleProcessor");
+        registry.add("runtime-lite.soap.plain-jms-destinations",
+            () -> "DEMO.IN,DEMO.OTHER.IN,demo.queue,demo.extra,demo.dynamic");
     }
 
     @BeforeEach
@@ -110,7 +131,7 @@ class PostgresDeliveryTest {
         jdbc.execute("CREATE TABLE IF NOT EXISTS " + REFERENCE_TABLE + " (code TEXT PRIMARY KEY, label TEXT NOT NULL)");
         jdbc.execute("CREATE TABLE IF NOT EXISTS " + BUSINESS_TABLE + " (message_id TEXT, label TEXT NOT NULL)");
         jdbc.execute("ALTER TABLE " + tables.outbox() + " DROP CONSTRAINT IF EXISTS reject_sent");
-        jdbc.execute("TRUNCATE " + tables.receipts() + ", " + tables.outbox() + ", " + BUSINESS_TABLE + ", " + REFERENCE_TABLE);
+        jdbc.execute("TRUNCATE " + tables.enrichment() + ", " + tables.inboundMessages() + ", " + tables.outbox() + ", " + BUSINESS_TABLE + ", " + REFERENCE_TABLE);
         jdbc.update("INSERT INTO " + REFERENCE_TABLE + " (code, label) VALUES (?, ?)", "A", "Synthetic label");
         processor.invocations.set(0);
         processor.fail = false;
@@ -133,27 +154,98 @@ class PostgresDeliveryTest {
         assertThat(jdbc.queryForList("""
             SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = ?
             """, String.class, DELIVERY_SCHEMA))
-            .contains("inbound_receipt", "outbox_message", "databasechangelog", "databasechangeloglock",
+            .contains("inbound_message", "outbox_message", "enrichment_workflow", "databasechangelog", "databasechangeloglock",
                 "reference_item", "processed_item");
         assertThat(references.findById("A")).contains(new ReferenceItem("A", "Synthetic label"));
     }
 
     @Test
     void liquibaseCanReopenExistingSchemaWithoutChangingMigrationHistory() throws Exception {
-        var checksums = jdbc.queryForList("SELECT md5sum FROM databasechangelog ORDER BY id", String.class);
+        String historyQuery = """
+            SELECT id, author, filename, md5sum, exectype, dateexecuted, orderexecuted
+            FROM databasechangelog
+            ORDER BY filename, author, id
+            """;
+        var history = jdbc.queryForList(historyQuery);
+        assertThat(history).isNotEmpty();
 
         liquibase.afterPropertiesSet();
 
-        assertThat(jdbc.queryForList("SELECT md5sum FROM databasechangelog ORDER BY id", String.class))
-            .hasSize(1).isEqualTo(checksums);
+        assertThat(jdbc.queryForList(historyQuery)).isEqualTo(history);
     }
 
     @Test
-    void createsOutboxBodyAsText() {
-        assertThat(jdbc.queryForObject("""
-            SELECT data_type FROM information_schema.columns
-            WHERE table_schema = ? AND table_name = 'outbox_message' AND column_name = 'body'
-            """, String.class, DELIVERY_SCHEMA)).isEqualTo("text");
+    void rerunsChangedChangesetsWithoutLosingDeliveryData() throws Exception {
+        String schema = "lite_upgrade_" + UUID.randomUUID().toString().replace("-", "");
+        String changelog = "db/changelog/db.changelog-master.yaml";
+        UUID outboxId = UUID.randomUUID();
+        jdbc.execute("CREATE SCHEMA " + schema);
+        try (var connection = dataSource.getConnection()) {
+            var database = DatabaseFactory.getInstance()
+                .findCorrectDatabaseImplementation(new JdbcConnection(connection));
+            database.setDefaultSchemaName(schema);
+            database.setLiquibaseSchemaName(schema);
+            try (var migration = new Liquibase(changelog, new ClassLoaderResourceAccessor(), database)) {
+                migration.setChangeLogParameter("deliverySchema", schema);
+                migration.update(new Contexts(), new LabelExpression());
+                jdbc.update("INSERT INTO " + schema + ".inbound_message "
+                        + "(route_id, message_id, source_destination, processor_id, body, headers) "
+                        + "VALUES (?, ?, ?, ?, ?, CAST(? AS jsonb))",
+                    "sample", "message-1", "DEMO.IN", "sampleProcessor", "original payload", "{}");
+                jdbc.update("INSERT INTO " + schema + ".outbox_message "
+                        + "(id, transport, destination, body, headers, status, jms_reply_to) "
+                        + "VALUES (?, ?, ?, ?, CAST(? AS jsonb), ?, ?)",
+                    outboxId, "JMS", "demo.queue", "sample payload", "{}", "CANCELLED", "demo.reply");
+
+                var indexes = List.of(schema + ".outbox_message_dispatch_idx", schema + ".enrichment_workflow_ready_idx",
+                    schema + ".enrichment_workflow_dispatch_deadline_idx", schema + ".enrichment_workflow_reply_deadline_idx");
+                indexes.forEach(index -> jdbc.execute("DROP INDEX " + index));
+                String history = schema + ".databasechangelog";
+                String changesetFilter = " WHERE id = ? AND author = ? AND filename = ?";
+                var changedChangesetIds = List.of("table-outbox-message", "table-enrichment-workflow");
+                changedChangesetIds.forEach(id -> assertThat(jdbc.update(
+                    "UPDATE " + history + " SET md5sum = ?" + changesetFilter,
+                    "9:00000000000000000000000000000000", id, "runtime-lite", changelog)).isEqualTo(1));
+
+                migration.update(new Contexts(), new LabelExpression());
+
+                changedChangesetIds.forEach(id -> assertThat(jdbc.queryForObject(
+                    "SELECT exectype FROM " + history + changesetFilter,
+                    String.class, id, "runtime-lite", changelog)).isEqualTo("RERAN"));
+                assertThat(indexes).allSatisfy(index ->
+                    assertThat(jdbc.queryForObject("SELECT to_regclass(?) IS NOT NULL", Boolean.class, index)).isTrue());
+                assertThat(jdbc.queryForObject("SELECT body FROM " + schema + ".outbox_message WHERE id = ?",
+                    String.class, outboxId)).isEqualTo("sample payload");
+                assertThat(jdbc.queryForObject("SELECT count(*) FROM " + schema + ".inbound_message", Integer.class))
+                    .isEqualTo(1);
+                assertThat(jdbc.queryForObject("SELECT count(*) FROM " + schema + ".enrichment_workflow", Integer.class))
+                    .isZero();
+                assertThat(jdbc.queryForObject("SELECT jms_reply_to FROM " + schema + ".outbox_message WHERE id = ?",
+                    String.class, outboxId)).isEqualTo("demo.reply");
+            }
+        } finally {
+            jdbc.execute("DROP SCHEMA " + schema + " CASCADE");
+        }
+    }
+
+    @Test
+    void createsNativeXmlColumnsAndTimeZoneAwareTimestamps() {
+        assertThat(jdbc.queryForList("""
+            SELECT table_name || '.' || column_name || ':' || data_type FROM information_schema.columns
+            WHERE table_schema = ? AND column_name IN ('body', 'body_xml', 'input_xml', 'reply_xml')
+            """, String.class, DELIVERY_SCHEMA)).containsExactlyInAnyOrder(
+                "inbound_message.body:text", "inbound_message.body_xml:xml",
+                "outbox_message.body:text", "outbox_message.body_xml:xml", "enrichment_workflow.reply_xml:xml");
+        assertThat(jdbc.queryForList("""
+            SELECT data_type || ':' || datetime_precision FROM information_schema.columns
+            WHERE table_schema = ? AND data_type LIKE 'timestamp%'
+                AND table_name IN ('inbound_message', 'outbox_message', 'enrichment_workflow')
+            """, String.class, DELIVERY_SCHEMA)).hasSize(11).containsOnly("timestamp with time zone:6");
+        assertThat(jdbc.queryForList("""
+            SELECT column_default FROM information_schema.columns
+            WHERE table_schema = ? AND data_type = 'timestamp with time zone' AND column_default IS NOT NULL
+                AND table_name IN ('inbound_message', 'outbox_message', 'enrichment_workflow')
+            """, String.class, DELIVERY_SCHEMA)).hasSize(4).allSatisfy(value -> assertThat(value).contains("clock_timestamp()"));
     }
 
     @Test
@@ -168,9 +260,12 @@ class PostgresDeliveryTest {
 
     @Test
     void commitsReferenceDrivenBusinessWriteAndAllMessagesTogether() {
+        processor.beforeWrite = () -> assertThat(jdbc.queryForObject(
+            "SELECT body FROM " + tables.inboundMessages(), String.class)).isEqualTo("A");
+
         processing.process("sample", inbound("ID:one"));
 
-        assertThat(count(tables.receipts())).isEqualTo(1);
+        assertThat(count(tables.inboundMessages())).isEqualTo(1);
         assertThat(count(BUSINESS_TABLE)).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT label FROM " + BUSINESS_TABLE, String.class)).isEqualTo("Synthetic label");
         assertThat(count(tables.outbox())).isEqualTo(2);
@@ -204,7 +299,7 @@ class PostgresDeliveryTest {
         assertThatThrownBy(() -> processing.process("sample", inbound("ID:retry")))
             .isInstanceOf(IllegalStateException.class);
 
-        assertThat(count(tables.receipts())).isZero();
+        assertThat(count(tables.inboundMessages())).isZero();
         assertThat(count(tables.outbox())).isZero();
         assertThat(count(BUSINESS_TABLE)).isZero();
 
@@ -212,7 +307,7 @@ class PostgresDeliveryTest {
         processing.process("sample", inbound("ID:retry"));
 
         assertThat(processor.invocations).hasValue(2);
-        assertThat(count(tables.receipts())).isEqualTo(1);
+        assertThat(count(tables.inboundMessages())).isEqualTo(1);
         assertThat(count(tables.outbox())).isEqualTo(2);
         assertThat(count(BUSINESS_TABLE)).isEqualTo(1);
     }
@@ -220,10 +315,22 @@ class PostgresDeliveryTest {
     @Test
     void ignoresBrokerRedeliveryAfterDatabaseCommit() {
         processing.process("sample", inbound("ID:duplicate"));
-        processing.process("sample", inbound("ID:duplicate"));
+        processing.process("sample", new InboundMessage("ID:duplicate", "different body", Map.of()));
 
         assertThat(processor.invocations).hasValue(1);
-        assertThat(count(tables.receipts())).isEqualTo(1);
+        assertThat(count(tables.inboundMessages())).isEqualTo(1);
+        assertThat(jdbc.queryForMap("""
+            SELECT route_id, message_id, source_destination, processor_id, body, body_xml::text AS body_xml,
+                headers ->> 'sample_header' AS sample_header
+            FROM %s
+            """.formatted(tables.inboundMessages())))
+            .containsEntry("route_id", "sample")
+            .containsEntry("message_id", "ID:duplicate")
+            .containsEntry("source_destination", "DEMO.IN")
+            .containsEntry("processor_id", "sampleProcessor")
+            .containsEntry("body", "A")
+            .containsEntry("body_xml", null)
+            .containsEntry("sample_header", "sample_value");
         assertThat(count(tables.outbox())).isEqualTo(2);
         assertThat(count(BUSINESS_TABLE)).isEqualTo(1);
     }
@@ -253,7 +360,7 @@ class PostgresDeliveryTest {
                     assertThat(jdbc.queryForObject("""
                         SELECT count(*) FROM pg_catalog.pg_stat_activity
                         WHERE wait_event_type = 'Lock' AND query LIKE ?
-                        """, Integer.class, "INSERT INTO " + tables.receipts() + "%")).isEqualTo(1));
+                        """, Integer.class, "INSERT INTO " + tables.inboundMessages() + "%")).isEqualTo(1));
                 assertThat(processor.invocations).hasValue(1);
                 release.countDown();
                 first.get(5, TimeUnit.SECONDS);
@@ -265,7 +372,7 @@ class PostgresDeliveryTest {
 
         assertThat(processor.invocations).hasValue(1);
         assertThat(count(BUSINESS_TABLE)).isEqualTo(1);
-        assertThat(count(tables.receipts())).isEqualTo(1);
+        assertThat(count(tables.inboundMessages())).isEqualTo(1);
         assertThat(count(tables.outbox())).isEqualTo(2);
     }
 
@@ -275,7 +382,7 @@ class PostgresDeliveryTest {
         processing.process("other", inbound("ID:shared"));
 
         assertThat(processor.invocations).hasValue(2);
-        assertThat(count(tables.receipts())).isEqualTo(2);
+        assertThat(count(tables.inboundMessages())).isEqualTo(2);
         assertThat(count(tables.outbox())).isEqualTo(4);
     }
 
@@ -327,15 +434,28 @@ class PostgresDeliveryTest {
     @Test
     void retriesTransientFailureSuccessfullyWithoutChangingTheMessage() {
         UUID id = enqueue();
-        sender.action = message -> { throw new IOException("Synthetic transport failure"); };
+        var sendFinishedAt = new AtomicReference<OffsetDateTime>();
+        Runnable finishSend = () -> sendFinishedAt.set(jdbc.queryForObject(
+            "SELECT clock_timestamp() FROM pg_sleep(0.02)", OffsetDateTime.class));
+        sender.action = message -> {
+            finishSend.run();
+            throw new IOException("Synthetic transport failure");
+        };
+
         dispatcher.dispatchBatch();
+
+        assertThat(jdbc.queryForObject("SELECT available_at FROM " + tables.outbox() + " WHERE id = ?",
+            OffsetDateTime.class, id)).isAfterOrEqualTo(sendFinishedAt.get().plus(properties.getRetryDelay()));
+
         makeAvailable(id);
-        sender.action = message -> { };
+        sender.action = message -> finishSend.run();
 
         assertThat(dispatcher.dispatchBatch()).isEqualTo(1);
 
         assertThat(status(id)).isEqualTo(OutboxStatus.SENT);
         assertThat(attempts(id)).isEqualTo(2);
+        assertThat(jdbc.queryForObject("SELECT sent_at FROM " + tables.outbox() + " WHERE id = ?",
+            OffsetDateTime.class, id)).isAfterOrEqualTo(sendFinishedAt.get());
         assertThat(sender.calls).extracting(OutboxMessage::id).containsExactly(id, id);
         assertThat(sender.calls).allSatisfy(message -> assertThat(message.message().body()).isEqualTo("payload"));
     }
@@ -408,7 +528,7 @@ class PostgresDeliveryTest {
     }
 
     private void makeAvailable(UUID id) {
-        jdbc.update("UPDATE " + tables.outbox() + " SET available_at = CURRENT_TIMESTAMP WHERE id = ?", id);
+        jdbc.update("UPDATE " + tables.outbox() + " SET available_at = clock_timestamp() WHERE id = ?", id);
     }
 
     private int count(String table) {
@@ -429,7 +549,7 @@ class PostgresDeliveryTest {
     }
 
     @TestConfiguration(proxyBeanMethods = false)
-    @EnableJdbcRepositories(basePackageClasses = PostgresDeliveryTest.class, considerNestedRepositories = true)
+    @EnableJdbcRepositories(basePackageClasses = RuntimeLiteApplication.class, considerNestedRepositories = true)
     static class Fixtures {
 
         @Bean
@@ -475,10 +595,14 @@ class PostgresDeliveryTest {
             if (fail) {
                 throw new IllegalStateException("Synthetic processing failure");
             }
+            var outbound = OutboundMessage.builder()
+                .payload(MessageBody.text(reference.label()))
+                .key(reference.code())
+                .headers(message.headers());
             if ("jms".equals(message.headers().get("target"))) {
-                return new OutboundMessage(Transport.JMS, "demo.dynamic", reference.label(), reference.code(), message.headers());
+                return outbound.transport(Transport.JMS).destination("demo.dynamic").build();
             }
-            return new OutboundMessage(Transport.KAFKA, "demo.result", reference.label(), reference.code(), message.headers());
+            return outbound.transport(Transport.KAFKA).destination("demo.result").build();
         }
     }
 

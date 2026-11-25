@@ -1,11 +1,22 @@
 package ru.petrovov.iib_camel.runtime_lite.config.xml;
 
+import jakarta.xml.bind.annotation.XmlAccessType;
+import jakarta.xml.bind.annotation.XmlAccessorType;
+import jakarta.xml.bind.annotation.XmlRootElement;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.core.io.DefaultResourceLoader;
+import ru.petrovov.iib_camel.runtime_lite.config.json.JsonConfiguration;
+import ru.petrovov.iib_camel.runtime_lite.xml.XmlProcessingException;
+import ru.petrovov.iib_camel.runtime_lite.xml.XmlService;
+import ru.petrovov.iib_camel.runtime_lite.xml.schema.XmlSchemaRegistry;
+import ru.petrovov.iib_camel.runtime_lite.xml.schema.XmlSchemaValidator;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
-import tools.jackson.dataformat.xml.XmlMapper;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -16,29 +27,30 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class XmlConfigurationTest {
 
     private final ApplicationContextRunner context = new ApplicationContextRunner()
-        .withUserConfiguration(XmlConfiguration.class);
+        .withUserConfiguration(XmlConfiguration.class, JsonConfiguration.class);
 
     @Test
     void roundTripsXmlAndKeepsJsonMapperPrimary() {
         context.run(result -> {
-            assertThat(result).hasNotFailed().hasSingleBean(XmlMapper.class).hasSingleBean(JsonMapper.class);
+            assertThat(result).hasNotFailed().hasSingleBean(XmlService.class).hasSingleBean(JsonMapper.class);
             assertThat(result.getBean(ObjectMapper.class)).isInstanceOf(JsonMapper.class);
-            var mapper = result.getBean(XmlMapper.class);
+            var xml = result.getBean(XmlService.class);
             var payload = new Payload("Привет <&>");
 
-            assertThat(mapper.readValue(mapper.writeValueAsBytes(payload), Payload.class)).isEqualTo(payload);
+            assertThat(xml.read(xml.write(payload), Payload.class)).isEqualTo(payload);
         });
     }
 
     @Test
-    void acceptsApplicationXmlAndJsonMappers() {
-        var xmlMapper = new XmlConfiguration().xmlMapper();
+    void acceptsApplicationXmlServiceAndJsonMapper() {
+        var registry = new XmlSchemaRegistry(new DefaultResourceLoader());
+        var xmlService = new XmlService(new XmlSchemaValidator(registry));
         var jsonMapper = JsonMapper.builder().build();
-        context.withBean(XmlMapper.class, () -> xmlMapper)
+        context.withBean(XmlService.class, () -> xmlService)
             .withBean(JsonMapper.class, () -> jsonMapper)
             .run(result -> {
-                assertThat(result).hasNotFailed().hasSingleBean(XmlMapper.class).hasSingleBean(JsonMapper.class);
-                assertThat(result.getBean(XmlMapper.class)).isSameAs(xmlMapper);
+                assertThat(result).hasNotFailed().hasSingleBean(XmlService.class).hasSingleBean(JsonMapper.class);
+                assertThat(result.getBean(XmlService.class)).isSameAs(xmlService);
                 assertThat(result.getBean(JsonMapper.class)).isSameAs(jsonMapper);
             });
     }
@@ -53,12 +65,19 @@ class XmlConfigurationTest {
             + "<Payload><value>&injected;</value></Payload>";
 
         context.run(result -> {
-            var mapper = result.getBean(XmlMapper.class);
-            assertThatThrownBy(() -> mapper.readValue(external, Payload.class)).isInstanceOf(RuntimeException.class);
-            assertThatThrownBy(() -> mapper.readValue(internal, Payload.class)).isInstanceOf(RuntimeException.class);
+            var xml = result.getBean(XmlService.class);
+            assertThatThrownBy(() -> xml.read(external, Payload.class)).isInstanceOf(XmlProcessingException.class);
+            assertThatThrownBy(() -> xml.read(internal, Payload.class)).isInstanceOf(XmlProcessingException.class);
         });
     }
 
-    public record Payload(String value) {
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @XmlRootElement(name = "Payload")
+    @XmlAccessorType(XmlAccessType.FIELD)
+    public static class Payload {
+
+        private String value;
     }
 }

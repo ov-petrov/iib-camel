@@ -9,7 +9,6 @@ import org.springframework.boot.availability.ReadinessState;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.ApplicationContext;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.net.URI;
@@ -24,9 +23,10 @@ import static org.assertj.core.api.Assertions.assertThat;
     "spring.datasource.url=jdbc:postgresql://127.0.0.1:1/unavailable",
     "spring.datasource.username=test",
     "spring.datasource.password=test",
-    "spring.autoconfigure.exclude=org.springframework.boot.data.jdbc.autoconfigure.DataJdbcRepositoriesAutoConfiguration"
+    "spring.autoconfigure.exclude=org.springframework.boot.data.jdbc.autoconfigure.DataJdbcRepositoriesAutoConfiguration",
+    "runtime-lite.outbox.scheduling-enabled=false",
+    "runtime-lite.listeners.auto-startup=false"
 })
-@ActiveProfiles("test")
 class ActuatorProbesTest {
 
     private static final Duration TIMEOUT = Duration.ofSeconds(5);

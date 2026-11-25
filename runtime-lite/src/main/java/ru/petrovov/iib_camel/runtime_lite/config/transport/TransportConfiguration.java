@@ -11,13 +11,14 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jms.config.DefaultJmsListenerContainerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
+import ru.petrovov.iib_camel.runtime_lite.config.EnrichmentProperties;
 import ru.petrovov.iib_camel.runtime_lite.transport.BrokerMessageSender;
 import ru.petrovov.iib_camel.runtime_lite.transport.JmsMessageReader;
 import ru.petrovov.iib_camel.runtime_lite.transport.MessageSender;
 
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties({JmsProperties.class, MqProperties.class, ArtemisProperties.class,
-    ListenerProperties.class})
+    ListenerProperties.class, EnrichmentProperties.class})
 public class TransportConfiguration {
 
     @Bean
@@ -47,8 +48,17 @@ public class TransportConfiguration {
     @Bean
     @ConditionalOnMissingBean(ConnectionFactory.class)
     @ConditionalOnProperty(prefix = "runtime-lite.jms", name = "provider", havingValue = "ARTEMIS")
-    ConnectionFactory artemisConnectionFactory(ArtemisProperties properties) {
+    ConnectionFactory artemisConnectionFactory(ArtemisProperties properties, EnrichmentProperties enrichment) {
         var factory = new ActiveMQConnectionFactory(properties.getBrokerUrl());
+        if (!enrichment.getOperations().isEmpty()) {
+            if (factory.getCallTimeout() <= 0 || factory.getInitialConnectAttempts() < 0
+                    || factory.getReconnectAttempts() < 0) {
+                throw new IllegalArgumentException("Artemis enrichment requires finite call time and connection attempts");
+            }
+            if (factory.getCallFailoverTimeout() <= 0) {
+                factory.setCallFailoverTimeout(factory.getCallTimeout());
+            }
+        }
         if (properties.getUsername() != null && !properties.getUsername().isBlank()) {
             factory.setUser(properties.getUsername());
             factory.setPassword(properties.getPassword());

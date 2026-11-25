@@ -38,6 +38,9 @@ public class BrokerMessageSender implements MessageSender {
                 }
             }
             message.setStringProperty(MessageHeaders.MESSAGE_ID, outgoing.id().toString());
+            if (outgoing.replyQueue() != null) {
+                message.setJMSReplyTo(context.createQueue(outgoing.replyQueue()));
+            }
             context.createProducer()
                 .setDeliveryMode(DeliveryMode.PERSISTENT)
                 .send(context.createQueue(outgoingMessage.destination()), message);

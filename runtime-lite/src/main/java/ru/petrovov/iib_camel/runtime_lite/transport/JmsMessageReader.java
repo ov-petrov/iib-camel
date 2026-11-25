@@ -33,20 +33,27 @@ public class JmsMessageReader {
 
     private String readBody(Message message) throws JMSException {
         if (!(message instanceof TextMessage text)) {
-            throw new JMSException("Only TextMessage is supported");
+            throw new InvalidMessageException("Only TextMessage is supported");
         }
         String body = text.getText();
         if (body == null) {
-            throw new JMSException("Text message body is required");
+            throw new InvalidMessageException("Text message body is required");
         }
-        requireSize(body.length());
-        requireSize(body.getBytes(StandardCharsets.UTF_8).length);
+        if (!isBodyWithinLimit(body)) {
+            throw new InvalidMessageException("Message body exceeds the configured size limit");
+        }
         return body;
     }
 
-    private void requireSize(long size) throws JMSException {
-        if (size < 0 || size > properties.getMaxBodyBytes()) {
-            throw new JMSException("Message body exceeds the configured size limit");
+    public boolean isBodyWithinLimit(String body) {
+        int limit = properties.getMaxBodyBytes();
+        return body != null && body.length() <= limit && body.getBytes(StandardCharsets.UTF_8).length <= limit;
+    }
+
+    public static class InvalidMessageException extends JMSException {
+
+        InvalidMessageException(String message) {
+            super(message);
         }
     }
 }
